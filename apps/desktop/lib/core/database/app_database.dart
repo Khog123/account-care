@@ -5,14 +5,24 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'tables/businesses.dart';
+import 'tables/users.dart';
+import 'tables/categories.dart';
+
 part 'app_database.g.dart';
 
 @DriftDatabase(
-  tables: [],
+  tables: [
+    Businesses,
+    Users,
+    Categories,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  AppDatabase.test() : super(NativeDatabase.memory());
+  
   @override
   int get schemaVersion => 1;
 }
