@@ -1,5 +1,5 @@
-import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({
@@ -29,6 +29,8 @@ class _AppSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentLocation = GoRouterState.of(context).uri.path;
+
     return Material(
       color: Theme.of(context).colorScheme.surface,
       child: SizedBox(
@@ -47,43 +49,56 @@ class _AppSidebar extends StatelessWidget {
                   ),
                 ),
               ),
+
               const Divider(height: 1),
               const SizedBox(height: 12),
 
               _SidebarItem(
                 icon: Icons.dashboard_outlined,
                 label: 'Dashboard',
-                selected: true,
+                selected: currentLocation == '/',
                 onTap: () => context.go('/'),
               ),
+
               _SidebarItem(
                 icon: Icons.point_of_sale_outlined,
                 label: 'New Sale',
+                selected: currentLocation == '/sales',
                 onTap: () => context.go('/sales'),
               ),
+
               _SidebarItem(
                 icon: Icons.inventory_2_outlined,
                 label: 'Products',
+                selected: currentLocation == '/products',
                 onTap: () => context.go('/products'),
               ),
+
               _SidebarItem(
                 icon: Icons.people_outline,
                 label: 'Customers',
+                selected: currentLocation == '/customers',
                 onTap: () => context.go('/customers'),
               ),
+
               _SidebarItem(
                 icon: Icons.account_balance_wallet_outlined,
                 label: 'Udhaar',
+                selected: currentLocation == '/udhaar',
                 onTap: () => context.go('/udhaar'),
               ),
+
               _SidebarItem(
                 icon: Icons.payments_outlined,
                 label: 'Payments',
+                selected: currentLocation == '/payments',
                 onTap: () => context.go('/payments'),
               ),
+
               _SidebarItem(
                 icon: Icons.bar_chart_outlined,
                 label: 'Reports',
+                selected: currentLocation == '/reports',
                 onTap: () => context.go('/reports'),
               ),
 
@@ -92,6 +107,7 @@ class _AppSidebar extends StatelessWidget {
               _SidebarItem(
                 icon: Icons.settings_outlined,
                 label: 'Settings',
+                selected: currentLocation == '/settings',
                 onTap: () => context.go('/settings'),
               ),
 

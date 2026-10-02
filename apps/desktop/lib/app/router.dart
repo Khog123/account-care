@@ -14,69 +14,66 @@ import 'shell/app_shell.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   routes: [
-    GoRoute(
-      path: '/',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: DashboardPage(),
+    ShellRoute(
+      builder: (
+        BuildContext context,
+        GoRouterState state,
+        Widget child,
+      ) {
+        return AppShell(
+          child: child,
         );
       },
-    ),
-    GoRoute(
-      path: '/sales',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: SalesPage(),
-        );
-      },
-    ),
-    GoRoute(
-      path: '/products',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: ProductsPage(),
-        );
-      },
-    ),
-    GoRoute(
-      path: '/customers',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: CustomersPage(),
-        );
-      },
-    ),
-    GoRoute(
-      path: '/udhaar',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: UdhaarPage(),
-        );
-      },
-    ),
-    GoRoute(
-      path: '/payments',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: PaymentsPage(),
-        );
-      },
-    ),
-    GoRoute(
-      path: '/reports',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: ReportsPage(),
-        );
-      },
-    ),
-    GoRoute(
-      path: '/settings',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AppShell(
-          child: SettingsPage(),
-        );
-      },
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) {
+            return const DashboardPage();
+          },
+        ),
+        GoRoute(
+          path: '/sales',
+          builder: (context, state) {
+            return const SalesPage();
+          },
+        ),
+        GoRoute(
+          path: '/products',
+          builder: (context, state) {
+            return const ProductsPage();
+          },
+        ),
+        GoRoute(
+          path: '/customers',
+          builder: (context, state) {
+            return const CustomersPage();
+          },
+        ),
+        GoRoute(
+          path: '/udhaar',
+          builder: (context, state) {
+            return const UdhaarPage();
+          },
+        ),
+        GoRoute(
+          path: '/payments',
+          builder: (context, state) {
+            return const PaymentsPage();
+          },
+        ),
+        GoRoute(
+          path: '/reports',
+          builder: (context, state) {
+            return const ReportsPage();
+          },
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (context, state) {
+            return const SettingsPage();
+          },
+        ),
+      ],
     ),
   ],
 );
