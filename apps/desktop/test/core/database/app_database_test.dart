@@ -23,4 +23,19 @@ void main() {
 
   expect(users, isEmpty);
 });
+test('categories table is queryable', () async {
+  final categories = await database.select(database.categories).get();
+
+  expect(categories, isEmpty);
+});
+test('products table is queryable', () async {
+  final products = await database.select(database.products).get();
+
+  expect(products, isEmpty);
+});
+test('customers table is queryable', () async {
+  final customers = await database.select(database.customers).get();
+
+  expect(customers, isEmpty);
+});
 }

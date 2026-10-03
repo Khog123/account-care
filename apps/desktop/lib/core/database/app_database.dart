@@ -8,6 +8,14 @@ import 'package:path_provider/path_provider.dart';
 import 'tables/businesses.dart';
 import 'tables/users.dart';
 import 'tables/categories.dart';
+import 'tables/products.dart';
+import 'tables/customers.dart';
+import 'tables/sales.dart';
+import 'tables/sale_items.dart';
+import 'tables/payments.dart';
+import 'tables/ledger_entries.dart';
+import 'tables/inventory_movements.dart';
+import 'tables/expenses.dart';
 
 part 'app_database.g.dart';
 
@@ -16,6 +24,14 @@ part 'app_database.g.dart';
     Businesses,
     Users,
     Categories,
+    Products,
+    Customers,
+    Sales,
+    SaleItems,
+    Payments,
+    LedgerEntries,
+    InventoryMovements,
+    Expenses,
   ],
 )
 class AppDatabase extends _$AppDatabase {
