@@ -172,6 +172,46 @@ class SaleService {
                 createdAt: now,
               ),
             );
+            }
+
+      if (paidMinor > 0) {
+        await _database.into(_database.payments).insert(
+              PaymentsCompanion.insert(
+                id: _generateId(),
+                businessId: businessId,
+                customerId: Value(customerId),
+                saleId: Value(saleId),
+                userId: userId,
+                amountMinor: paidMinor,
+                paymentMethod: 'cash',
+                paidAt: soldAt,
+                createdAt: now,
+              ),
+            );
+      }
+
+      if (dueMinor > 0) {
+        if (customerId == null) {
+          throw StateError(
+            'A sale with an outstanding balance requires a customer.',
+          );
+        }
+
+        await _database.into(_database.ledgerEntries).insert(
+              LedgerEntriesCompanion.insert(
+                id: _generateId(),
+                businessId: businessId,
+                customerId: customerId,
+                saleId: Value(saleId),
+                entryType: 'sale_credit',
+                amountMinor: dueMinor,
+                description: Value(
+                  'Credit from sale $invoiceNumber',
+                ),
+                entryAt: soldAt,
+                createdAt: now,
+              ),
+            );
       }
 
       return saleId;
