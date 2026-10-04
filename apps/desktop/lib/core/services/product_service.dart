@@ -1,0 +1,205 @@
+import 'package:drift/drift.dart';
+
+import '../database/app_database.dart';
+
+class ProductService {
+  ProductService(this._database);
+
+  final AppDatabase _database;
+
+  Future<String> createProduct({
+    required String businessId,
+    required String productId,
+    required String categoryId,
+    required String name,
+    required int purchasePriceMinor,
+    required int salePriceMinor,
+    int stockQuantity = 0,
+    int lowStockThreshold = 0,
+    String? sku,
+  }) async {
+    final trimmedName = name.trim();
+
+    if (trimmedName.isEmpty) {
+      throw ArgumentError(
+        'Product name cannot be empty.',
+      );
+    }
+
+    if (purchasePriceMinor < 0) {
+      throw ArgumentError(
+        'Purchase price cannot be negative.',
+      );
+    }
+
+    if (salePriceMinor < 0) {
+      throw ArgumentError(
+        'Sale price cannot be negative.',
+      );
+    }
+
+    if (stockQuantity < 0) {
+      throw ArgumentError(
+        'Stock quantity cannot be negative.',
+      );
+    }
+
+    if (lowStockThreshold < 0) {
+      throw ArgumentError(
+        'Low stock threshold cannot be negative.',
+      );
+    }
+
+    final business = await (_database.select(_database.businesses)
+          ..where(
+            (business) => business.id.equals(businessId),
+          ))
+        .getSingleOrNull();
+
+    if (business == null) {
+      throw StateError(
+        'Business not found: $businessId',
+      );
+    }
+
+    final category = await (_database.select(_database.categories)
+          ..where(
+            (category) =>
+                category.id.equals(categoryId) &
+                category.businessId.equals(businessId),
+          ))
+        .getSingleOrNull();
+
+    if (category == null) {
+      throw StateError(
+        'Category not found for this business: $categoryId',
+      );
+    }
+
+    final now = DateTime.now();
+
+    await _database.into(_database.products).insert(
+          ProductsCompanion.insert(
+            id: productId,
+            businessId: businessId,
+            categoryId: categoryId,
+            name: trimmedName,
+            sku: Value(sku),
+            purchasePriceMinor: purchasePriceMinor,
+            salePriceMinor: salePriceMinor,
+            stockQuantity: stockQuantity,
+            lowStockThreshold: Value(lowStockThreshold),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    return productId;
+  }
+
+  Future<Product?> getProductById({
+    required String businessId,
+    required String productId,
+  }) {
+    return (_database.select(_database.products)
+          ..where(
+            (product) =>
+                product.id.equals(productId) &
+                product.businessId.equals(businessId),
+          ))
+        .getSingleOrNull();
+  }
+
+  Future<void> updateProduct({
+    required String businessId,
+    required String productId,
+    required String categoryId,
+    required String name,
+    required int purchasePriceMinor,
+    required int salePriceMinor,
+    required int stockQuantity,
+    required int lowStockThreshold,
+    String? sku,
+    required bool isActive,
+  }) async {
+    final trimmedName = name.trim();
+
+    if (trimmedName.isEmpty) {
+      throw ArgumentError(
+        'Product name cannot be empty.',
+      );
+    }
+
+    if (purchasePriceMinor < 0) {
+      throw ArgumentError(
+        'Purchase price cannot be negative.',
+      );
+    }
+
+    if (salePriceMinor < 0) {
+      throw ArgumentError(
+        'Sale price cannot be negative.',
+      );
+    }
+
+    if (stockQuantity < 0) {
+      throw ArgumentError(
+        'Stock quantity cannot be negative.',
+      );
+    }
+
+    if (lowStockThreshold < 0) {
+      throw ArgumentError(
+        'Low stock threshold cannot be negative.',
+      );
+    }
+
+    final product = await (_database.select(_database.products)
+          ..where(
+            (product) =>
+                product.id.equals(productId) &
+                product.businessId.equals(businessId),
+          ))
+        .getSingleOrNull();
+
+    if (product == null) {
+      throw StateError(
+        'Product not found for this business: $productId',
+      );
+    }
+
+    final category = await (_database.select(_database.categories)
+          ..where(
+            (category) =>
+                category.id.equals(categoryId) &
+                category.businessId.equals(businessId),
+          ))
+        .getSingleOrNull();
+
+    if (category == null) {
+      throw StateError(
+        'Category not found for this business: $categoryId',
+      );
+    }
+
+    await (_database.update(_database.products)
+          ..where(
+            (product) =>
+                product.id.equals(productId) &
+                product.businessId.equals(businessId),
+          ))
+        .write(
+      ProductsCompanion(
+        categoryId: Value(categoryId),
+        name: Value(trimmedName),
+        sku: Value(sku),
+        purchasePriceMinor: Value(purchasePriceMinor),
+        salePriceMinor: Value(salePriceMinor),
+        stockQuantity: Value(stockQuantity),
+        lowStockThreshold: Value(lowStockThreshold),
+        isActive: Value(isActive),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+}
