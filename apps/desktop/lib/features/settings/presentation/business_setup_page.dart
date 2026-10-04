@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/business_provider.dart';
 import '../../../core/providers/dashboard_provider.dart';
@@ -31,6 +32,8 @@ class _BusinessSetupPageState
           content: Text('Please enter a business name.'),
         ),
       );
+
+      context.go('/');
       return;
     }
 
@@ -109,23 +112,16 @@ class _BusinessSetupPageState
                           title: Text(business.name),
                           subtitle: Text(business.currencyCode),
                           trailing: FilledButton(
-                            onPressed: () {
+                           onPressed: () {
                               ref
-                                  .read(
-                                    activeBusinessIdProvider.notifier,
+                                .read(
+                                  activeBusinessIdProvider.notifier,
                                   )
-                                  .setBusinessId(business.id);
+                                .setBusinessId(business.id);
 
                               ref.invalidate(dashboardProvider);
 
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '${business.name} selected.',
-                                  ),
-                                ),
-                              );
+                              context.go('/');
                             },
                             child: const Text('Select'),
                           ),

@@ -97,6 +97,31 @@ class ProductService {
     return productId;
   }
 
+    Future<List<Product>> getProducts({
+    required String businessId,
+    bool activeOnly = false,
+  }) {
+    final query = _database.select(_database.products)
+      ..where(
+        (product) => product.businessId.equals(businessId),
+      );
+
+    if (activeOnly) {
+      query.where(
+        (product) => product.isActive.equals(true),
+      );
+    }
+
+    query.orderBy([
+      (product) => OrderingTerm(
+            expression: product.name,
+            mode: OrderingMode.asc,
+          ),
+    ]);
+
+    return query.get();
+  }
+
   Future<Product?> getProductById({
     required String businessId,
     required String productId,

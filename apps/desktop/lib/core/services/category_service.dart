@@ -47,6 +47,31 @@ class CategoryService {
     return categoryId;
   }
 
+  Future<List<Category>> getCategories({
+    required String businessId,
+    bool activeOnly = false,
+  }) {
+    final query = _database.select(_database.categories)
+      ..where(
+        (category) => category.businessId.equals(businessId),
+      );
+
+    if (activeOnly) {
+      query.where(
+        (category) => category.isActive.equals(true),
+      );
+    }
+
+    query.orderBy([
+      (category) => OrderingTerm(
+            expression: category.name,
+            mode: OrderingMode.asc,
+          ),
+    ]);
+
+    return query.get();
+  }
+
   Future<Category?> getCategoryById({
     required String businessId,
     required String categoryId,

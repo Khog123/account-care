@@ -7,14 +7,27 @@ import '../features/payments/presentation/payments_page.dart';
 import '../features/products/presentation/products_page.dart';
 import '../features/reports/presentation/reports_page.dart';
 import '../features/sales/presentation/sales_page.dart';
-import '../features/settings/presentation/settings_page.dart';
-import '../features/udhaar/presentation/udhaar_page.dart';
 import '../features/settings/presentation/business_setup_page.dart';
+import '../features/settings/presentation/settings_page.dart';
+import '../features/startup/presentation/startup_page.dart';
+import '../features/udhaar/presentation/udhaar_page.dart';
 import 'shell/app_shell.dart';
 
 final GoRouter appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/startup',
   routes: [
+    GoRoute(
+      path: '/startup',
+      builder: (context, state) {
+        return const StartupPage();
+      },
+    ),
+    GoRoute(
+      path: '/business-setup',
+      builder: (context, state) {
+        return const BusinessSetupPage();
+      },
+    ),
     ShellRoute(
       builder: (
         BuildContext context,
@@ -72,12 +85,6 @@ final GoRouter appRouter = GoRouter(
           path: '/settings',
           builder: (context, state) {
             return const SettingsPage();
-          },
-        ),
-        GoRoute(
-          path: '/business-setup',
-          builder: (context, state) {
-            return const BusinessSetupPage();
           },
         ),
       ],

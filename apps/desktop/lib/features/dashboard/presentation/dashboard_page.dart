@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/dashboard_provider.dart';
+import '../../../core/services/dashboard_service.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -31,43 +32,70 @@ class DashboardPage extends ConsumerWidget {
             );
           },
           data: (summary) {
-            return GridView.count(
-              crossAxisCount: 4,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.8,
-              children: [
-                _DashboardCard(
-                  title: "Today's Sales",
-                  value: _formatMoney(summary.todaySalesMinor),
-                  icon: Icons.point_of_sale,
-                ),
-                _DashboardCard(
-                  title: "Today's Profit",
-                  value: _formatMoney(summary.todayProfitMinor),
-                  icon: Icons.trending_up,
-                ),
-                _DashboardCard(
-                  title: 'Credit Due',
-                  value: _formatMoney(summary.creditDueMinor),
-                  icon: Icons.account_balance_wallet,
-                ),
-                _DashboardCard(
-                  title: 'Low Stock',
-                  value: '${summary.lowStockProductCount} items',
-                  icon: Icons.inventory_2,
-                ),
-              ],
+            return _DashboardContent(
+              summary: summary,
             );
           },
         ),
       ),
     );
   }
+}
+
+class _DashboardContent extends StatelessWidget {
+  const _DashboardContent({
+    required this.summary,
+  });
+
+  final DashboardSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = constraints.maxWidth >= 1100
+            ? 4
+            : constraints.maxWidth >= 750
+                ? 2
+                : 1;
+
+        return GridView.count(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 2.2,
+          children: [
+            _DashboardCard(
+              title: "Today's Sales",
+              value: _formatMoney(summary.todaySalesMinor),
+              icon: Icons.point_of_sale_outlined,
+            ),
+            _DashboardCard(
+              title: "Today's Profit",
+              value: _formatMoney(summary.todayProfitMinor),
+              icon: Icons.trending_up_outlined,
+            ),
+            _DashboardCard(
+              title: 'Credit Due',
+              value: _formatMoney(summary.creditDueMinor),
+              icon: Icons.account_balance_wallet_outlined,
+            ),
+            _DashboardCard(
+              title: 'Low Stock',
+              value: '${summary.lowStockProductCount} items',
+              icon: Icons.inventory_2_outlined,
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   String _formatMoney(int minor) {
     final major = minor ~/ 100;
-    return 'PKR $major';
+    final decimal = (minor % 100).abs().toString().padLeft(2, '0');
+
+    return 'PKR $major.$decimal';
   }
 }
 
@@ -86,14 +114,14 @@ class _DashboardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Row(
           children: [
             Icon(
               icon,
-              size: 28,
+              size: 32,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -102,15 +130,18 @@ class _DashboardCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
                     value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ],
               ),

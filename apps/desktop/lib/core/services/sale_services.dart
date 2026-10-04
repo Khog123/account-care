@@ -131,7 +131,9 @@ class SaleService {
 
         final product = await (_database.select(_database.products)
               ..where(
-                (product) => product.id.equals(item.productId),
+                (product) =>
+                    product.id.equals(item.productId) &
+                    product.businessId.equals(businessId),
               ))
             .getSingle();
 
@@ -147,7 +149,9 @@ class SaleService {
 
         await (_database.update(_database.products)
               ..where(
-                (product) => product.id.equals(item.productId),
+                (product) =>
+                    product.id.equals(item.productId) &
+                    product.businessId.equals(businessId),
               ))
             .write(
           ProductsCompanion(
@@ -172,7 +176,7 @@ class SaleService {
                 createdAt: now,
               ),
             );
-            }
+      }
 
       if (paidMinor > 0) {
         await _database.into(_database.payments).insert(
