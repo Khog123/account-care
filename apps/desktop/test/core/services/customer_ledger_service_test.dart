@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' show Value;
 
 import 'package:desktop/core/database/app_database.dart';
 import 'package:desktop/core/services/customer_ledger_service.dart';

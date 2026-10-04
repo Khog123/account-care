@@ -1,46 +1,73 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class DashboardPage extends StatelessWidget {
+import '../../../core/providers/dashboard_provider.dart';
+
+class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dashboardAsync = ref.watch(dashboardProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),
-        child: GridView.count(
-          crossAxisCount: 4,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 1.8,
-          children: const [
-            _DashboardCard(
-              title: "Today's Sales",
-              value: 'PKR 0',
-              icon: Icons.point_of_sale,
-            ),
-            _DashboardCard(
-              title: "Today's Profit",
-              value: 'PKR 0',
-              icon: Icons.trending_up,
-            ),
-            _DashboardCard(
-              title: 'Credit Due',
-              value: 'PKR 0',
-              icon: Icons.account_balance_wallet,
-            ),
-            _DashboardCard(
-              title: 'Low Stock',
-              value: '0 items',
-              icon: Icons.inventory_2,
-            ),
-          ],
+        child: dashboardAsync.when(
+          loading: () {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          },
+          error: (error, stackTrace) {
+            return _DashboardError(
+              message: error.toString(),
+              onRetry: () {
+                ref.invalidate(dashboardProvider);
+              },
+            );
+          },
+          data: (summary) {
+            return GridView.count(
+              crossAxisCount: 4,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.8,
+              children: [
+                _DashboardCard(
+                  title: "Today's Sales",
+                  value: _formatMoney(summary.todaySalesMinor),
+                  icon: Icons.point_of_sale,
+                ),
+                _DashboardCard(
+                  title: "Today's Profit",
+                  value: _formatMoney(summary.todayProfitMinor),
+                  icon: Icons.trending_up,
+                ),
+                _DashboardCard(
+                  title: 'Credit Due',
+                  value: _formatMoney(summary.creditDueMinor),
+                  icon: Icons.account_balance_wallet,
+                ),
+                _DashboardCard(
+                  title: 'Low Stock',
+                  value: '${summary.lowStockProductCount} items',
+                  icon: Icons.inventory_2,
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
+  }
+
+  String _formatMoney(int minor) {
+    final major = minor ~/ 100;
+    return 'PKR $major';
   }
 }
 
@@ -90,6 +117,49 @@ class _DashboardCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DashboardError extends StatelessWidget {
+  const _DashboardError({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.info_outline,
+            size: 48,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Dashboard unavailable',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: onRetry,
+            child: const Text('Retry'),
+          ),
+        ],
       ),
     );
   }

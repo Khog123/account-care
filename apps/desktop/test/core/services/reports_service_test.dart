@@ -53,30 +53,34 @@ void main() {
         );
   }
 
-  Future<void> createProduct({
+  Future<void> createSale({
     required String id,
     required String businessId,
-    required String name,
-    required int purchasePriceMinor,
+    required String userId,
+    required String invoiceNumber,
+    required int subtotalMinor,
+    required int totalMinor,
+    required int paidMinor,
+    required int dueMinor,
+    required DateTime soldAt,
+    String status = 'completed',
   }) async {
-    final now = DateTime.now();
-
-    await database.into(database.products).insert(
-          ProductsCompanion.insert(
+    await database.into(database.sales).insert(
+          SalesCompanion.insert(
             id: id,
             businessId: businessId,
-            categoryId: null,
-            name: name,
-            purchasePriceMinor: purchasePriceMinor,
-            salePriceMinor: purchasePriceMinor + 500,
-            stockQuantity: 100,
-            lowStockThreshold: const Value(5),
-            createdAt: now,
-            updatedAt: now,
+            userId: userId,
+            invoiceNumber: invoiceNumber,
+            subtotalMinor: subtotalMinor,
+            totalMinor: totalMinor,
+            paidMinor: Value(paidMinor),
+            dueMinor: Value(dueMinor),
+            status: status,
+            soldAt: soldAt,
+            createdAt: soldAt,
           ),
         );
   }
-
 
   test('returns zero values when there are no sales', () async {
     await createBusiness(id: 'business-1');
@@ -96,12 +100,24 @@ void main() {
 
   test('calculates sales totals for the requested date range', () async {
     await createBusiness(id: 'business-1');
+
     await createUser(
       id: 'user-1',
       businessId: 'business-1',
     );
 
     final saleDate = DateTime(2026, 10, 10, 12);
+    final now = DateTime.now();
+
+    await database.into(database.categories).insert(
+      CategoriesCompanion.insert(
+        id: 'category-1',
+        businessId: 'business-1',
+        name: 'General',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
 
     await createSale(
       id: 'sale-1',
@@ -141,6 +157,7 @@ void main() {
 
   test('excludes sales outside the requested date range', () async {
     await createBusiness(id: 'business-1');
+
     await createUser(
       id: 'user-1',
       businessId: 'business-1',
@@ -244,11 +261,12 @@ void main() {
 
   test('excludes cancelled sales', () async {
     await createBusiness(id: 'business-1');
+
     await createUser(
       id: 'user-1',
       businessId: 'business-1',
     );
-
+      
     final saleDate = DateTime(2026, 10, 10, 12);
 
     await createSale(
@@ -261,15 +279,8 @@ void main() {
       paidMinor: 10000,
       dueMinor: 0,
       soldAt: saleDate,
+      status: 'cancelled',
     );
-
-    await (database.update(database.sales)
-      ..where((sale) => sale.id.equals('sale-completed')))
-      .write(
-        const SalesCompanion(
-          status: Value('cancelled'),
-        ),
-      );
 
     final result = await service.getSalesReport(
       businessId: 'business-1',
@@ -279,6 +290,121 @@ void main() {
 
     expect(result.saleCount, 0);
     expect(result.totalSalesMinor, 0);
+  });
+
+    test('returns top-selling products for the requested date range', () async {
+    await createBusiness(id: 'business-1');
+
+    await createUser(
+      id: 'user-1',
+      businessId: 'business-1',
+    );
+
+    final now = DateTime(2026, 10, 10, 12);
+
+    await database.into(database.categories).insert(
+      CategoriesCompanion.insert(
+        id: 'category-1',
+        businessId: 'business-1',
+        name: 'General',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-1',
+            businessId: 'business-1',
+            categoryId: 'category-1',
+            name: 'Product A',
+            purchasePriceMinor: 500,
+            salePriceMinor: 1000,
+            stockQuantity: 20,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-2',
+            businessId: 'business-1',
+            categoryId: 'category-1',
+            name: 'Product B',
+            purchasePriceMinor: 700,
+            salePriceMinor: 1500,
+            stockQuantity: 20,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await createSale(
+      id: 'sale-1',
+      businessId: 'business-1',
+      userId: 'user-1',
+      invoiceNumber: 'INV-001',
+      subtotalMinor: 5000,
+      totalMinor: 5000,
+      paidMinor: 5000,
+      dueMinor: 0,
+      soldAt: now,
+    );
+
+    await database.into(database.saleItems).insert(
+          SaleItemsCompanion.insert(
+            id: 'item-1',
+            saleId: 'sale-1',
+            productId: 'product-1',
+            productName: 'Product A',
+            quantity: 5,
+            unitPriceMinor: 1000,
+            lineTotalMinor: 5000,
+          ),
+        );
+
+    await createSale(
+      id: 'sale-2',
+      businessId: 'business-1',
+      userId: 'user-1',
+      invoiceNumber: 'INV-002',
+      subtotalMinor: 4500,
+      totalMinor: 4500,
+      paidMinor: 4500,
+      dueMinor: 0,
+      soldAt: now,
+    );
+
+    await database.into(database.saleItems).insert(
+          SaleItemsCompanion.insert(
+            id: 'item-2',
+            saleId: 'sale-2',
+            productId: 'product-2',
+            productName: 'Product B',
+            quantity: 3,
+            unitPriceMinor: 1500,
+            lineTotalMinor: 4500,
+          ),
+        );
+
+    final result = await service.getTopSellingProducts(
+      businessId: 'business-1',
+      from: DateTime(2026, 10, 1),
+      to: DateTime(2026, 10, 31, 23, 59, 59),
+    );
+
+    expect(result.length, 2);
+
+    expect(result[0].productId, 'product-1');
+    expect(result[0].productName, 'Product A');
+    expect(result[0].quantitySold, 5);
+    expect(result[0].salesMinor, 5000);
+
+    expect(result[1].productId, 'product-2');
+    expect(result[1].productName, 'Product B');
+    expect(result[1].quantitySold, 3);
+    expect(result[1].salesMinor, 4500);
   });
 
   test('rejects an unknown business', () async {

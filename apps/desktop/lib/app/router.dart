@@ -9,6 +9,7 @@ import '../features/reports/presentation/reports_page.dart';
 import '../features/sales/presentation/sales_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/udhaar/presentation/udhaar_page.dart';
+import '../features/settings/presentation/business_setup_page.dart';
 import 'shell/app_shell.dart';
 
 final GoRouter appRouter = GoRouter(
@@ -71,6 +72,12 @@ final GoRouter appRouter = GoRouter(
           path: '/settings',
           builder: (context, state) {
             return const SettingsPage();
+          },
+        ),
+        GoRoute(
+          path: '/business-setup',
+          builder: (context, state) {
+            return const BusinessSetupPage();
           },
         ),
       ],
