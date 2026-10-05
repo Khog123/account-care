@@ -327,4 +327,198 @@ expect(ledgerEntries, isEmpty);
     expect(ledgerEntries.single.amountMinor, 1500);
     expect(ledgerEntries.single.entryType, 'sale_credit');
   });
+
+    test('applies sale-level discount to the final total', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-1',
+            businessId: 'business-1',
+            name: 'Test User',
+            username: 'test-user',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.categories).insert(
+          CategoriesCompanion.insert(
+            id: 'category-1',
+            businessId: 'business-1',
+            name: 'General',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-1',
+            businessId: 'business-1',
+            categoryId: 'category-1',
+            name: 'Discount Product',
+            purchasePriceMinor: 6000,
+            salePriceMinor: 10000,
+            stockQuantity: 10,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await saleService.completeSale(
+      businessId: 'business-1',
+      userId: 'user-1',
+      saleId: 'sale-discount-1',
+      invoiceNumber: 'INV-004',
+      items: const [
+        SaleItemRequest(
+          productId: 'product-1',
+          quantity: 1,
+        ),
+      ],
+      discountMinor: 1000,
+      paidMinor: 9000,
+      status: 'completed',
+      soldAt: now,
+    );
+
+    final sale = await (database.select(database.sales)
+          ..where(
+            (sale) => sale.id.equals('sale-discount-1'),
+          ))
+        .getSingle();
+
+    expect(sale.subtotalMinor, 10000);
+    expect(sale.discountMinor, 1000);
+    expect(sale.totalMinor, 9000);
+    expect(sale.paidMinor, 9000);
+    expect(sale.dueMinor, 0);
+
+    final saleItems = await (database.select(database.saleItems)
+          ..where(
+            (item) => item.saleId.equals('sale-discount-1'),
+          ))
+        .get();
+
+    expect(saleItems.length, 1);
+    expect(saleItems.single.lineTotalMinor, 10000);
+  });
+    test('creates customer debt for a fully unpaid sale', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-1',
+            businessId: 'business-1',
+            name: 'Test User',
+            username: 'test-user',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.categories).insert(
+          CategoriesCompanion.insert(
+            id: 'category-1',
+            businessId: 'business-1',
+            name: 'General',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.customers).insert(
+          CustomersCompanion.insert(
+            id: 'customer-1',
+            businessId: 'business-1',
+            name: 'Test Customer',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-1',
+            businessId: 'business-1',
+            categoryId: 'category-1',
+            name: 'Credit Product',
+            purchasePriceMinor: 500,
+            salePriceMinor: 1000,
+            stockQuantity: 10,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await saleService.completeSale(
+      businessId: 'business-1',
+      userId: 'user-1',
+      saleId: 'sale-unpaid-1',
+      invoiceNumber: 'INV-005',
+      customerId: 'customer-1',
+      items: const [
+        SaleItemRequest(
+          productId: 'product-1',
+          quantity: 2,
+        ),
+      ],
+      paidMinor: 0,
+      status: 'completed',
+      soldAt: now,
+    );
+
+    final sale = await (database.select(database.sales)
+          ..where(
+            (sale) => sale.id.equals('sale-unpaid-1'),
+          ))
+        .getSingle();
+
+    expect(sale.totalMinor, 2000);
+    expect(sale.paidMinor, 0);
+    expect(sale.dueMinor, 2000);
+
+    final payments = await (database.select(database.payments)
+          ..where(
+            (payment) => payment.saleId.equals('sale-unpaid-1'),
+          ))
+        .get();
+
+    expect(payments, isEmpty);
+
+    final ledgerEntries =
+        await (database.select(database.ledgerEntries)
+              ..where(
+                (entry) => entry.saleId.equals('sale-unpaid-1'),
+              ))
+            .get();
+
+    expect(ledgerEntries.length, 1);
+    expect(ledgerEntries.single.customerId, 'customer-1');
+    expect(ledgerEntries.single.amountMinor, 2000);
+    expect(ledgerEntries.single.entryType, 'sale_credit');
+  });
 }

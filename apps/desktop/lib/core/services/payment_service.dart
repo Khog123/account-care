@@ -56,6 +56,39 @@ class PaymentService {
       );
     }
 
+    final saleCredits = await (_database.select(_database.ledgerEntries)
+      ..where(
+        (entry) =>
+              entry.businessId.equals(businessId) &
+              entry.customerId.equals(customerId) &                entry.entryType.equals('sale_credit'),
+          ))
+        .get();
+
+    final payments = await (_database.select(_database.ledgerEntries)
+          ..where(
+            (entry) =>
+                entry.businessId.equals(businessId) &
+                entry.customerId.equals(customerId) &
+                entry.entryType.equals('payment'),
+          ))
+        .get();
+
+    var outstandingBalance = customer.openingBalanceMinor;
+
+    for (final entry in saleCredits) {
+      outstandingBalance += entry.amountMinor;
+    }
+
+    for (final entry in payments) {
+      outstandingBalance -= entry.amountMinor;
+    }
+
+    if (amountMinor > outstandingBalance) {
+      throw ArgumentError(
+        'Payment cannot exceed the customer outstanding balance.',
+      );
+    }
+
     return _database.transaction(() async {
       final now = DateTime.now();
 
