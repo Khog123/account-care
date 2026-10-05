@@ -42,24 +42,35 @@ class ReportsService {
     required DateTime from,
     required DateTime to,
   }) async {
+    final trimmedBusinessId = businessId.trim();
+
+    if (trimmedBusinessId.isEmpty) {
+      throw ArgumentError('Business ID cannot be empty.');
+    }
+
     if (from.isAfter(to)) {
-      throw ArgumentError('Report start date cannot be after end date.');
+      throw ArgumentError(
+        'Report start date cannot be after end date.',
+      );
     }
 
     final business = await (_database.select(_database.businesses)
           ..where(
-            (business) => business.id.equals(businessId),
+            (business) =>
+                business.id.equals(trimmedBusinessId),
           ))
         .getSingleOrNull();
 
     if (business == null) {
-      throw StateError('Business not found: $businessId');
+      throw StateError(
+        'Business not found: $trimmedBusinessId',
+      );
     }
 
     final sales = await (_database.select(_database.sales)
           ..where(
             (sale) =>
-                sale.businessId.equals(businessId) &
+                sale.businessId.equals(trimmedBusinessId) &
                 sale.soldAt.isBiggerOrEqualValue(from) &
                 sale.soldAt.isSmallerOrEqualValue(to) &
                 sale.status.equals('completed'),
@@ -69,11 +80,30 @@ class ReportsService {
     var totalSalesMinor = 0;
     var totalPaidMinor = 0;
     var totalCreditMinor = 0;
+    var totalProfitMinor = 0;
 
     for (final sale in sales) {
       totalSalesMinor += sale.totalMinor;
       totalPaidMinor += sale.paidMinor;
       totalCreditMinor += sale.dueMinor;
+
+      final items = await (_database.select(_database.saleItems)
+            ..where(
+              (item) => item.saleId.equals(sale.id),
+            ))
+          .get();
+
+      for (final item in items) {
+        final itemProfit =
+            (item.unitPriceMinor - item.purchasePriceMinor) *
+                item.quantity -
+            item.discountMinor;
+
+        totalProfitMinor += itemProfit;
+      }
+
+      // Sale-level discount applies after line-item totals.
+      totalProfitMinor -= sale.discountMinor;
     }
 
     return SalesReport(
@@ -81,7 +111,7 @@ class ReportsService {
       totalSalesMinor: totalSalesMinor,
       totalPaidMinor: totalPaidMinor,
       totalCreditMinor: totalCreditMinor,
-      totalProfitMinor: 0,
+      totalProfitMinor: totalProfitMinor,
     );
   }
 
@@ -90,18 +120,29 @@ class ReportsService {
     required DateTime from,
     required DateTime to,
   }) async {
+    final trimmedBusinessId = businessId.trim();
+
+    if (trimmedBusinessId.isEmpty) {
+      throw ArgumentError('Business ID cannot be empty.');
+    }
+
     if (from.isAfter(to)) {
-      throw ArgumentError('Report start date cannot be after end date.');
+      throw ArgumentError(
+        'Report start date cannot be after end date.',
+      );
     }
 
     final business = await (_database.select(_database.businesses)
           ..where(
-            (business) => business.id.equals(businessId),
+            (business) =>
+                business.id.equals(trimmedBusinessId),
           ))
         .getSingleOrNull();
 
     if (business == null) {
-      throw StateError('Business not found: $businessId');
+      throw StateError(
+        'Business not found: $trimmedBusinessId',
+      );
     }
 
     final rows = await _database.customSelect(
@@ -127,7 +168,7 @@ class ReportsService {
         product_name ASC
       ''',
       variables: [
-        Variable<String>(businessId),
+        Variable<String>(trimmedBusinessId),
         Variable<DateTime>(from),
         Variable<DateTime>(to),
       ],

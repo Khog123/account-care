@@ -19,6 +19,29 @@ class SaleService {
     required String status,
     required DateTime soldAt,
   }) async {
+    final trimmedBusinessId = businessId.trim();
+    final trimmedUserId = userId.trim();
+    final trimmedSaleId = saleId.trim();
+    final trimmedInvoiceNumber = invoiceNumber.trim();
+    final trimmedCustomerId = customerId?.trim();
+    final trimmedStatus = status.trim().toLowerCase();
+
+    if (trimmedBusinessId.isEmpty) {
+      throw ArgumentError('Business ID cannot be empty.');
+    }
+
+    if (trimmedUserId.isEmpty) {
+      throw ArgumentError('User ID cannot be empty.');
+    }
+
+    if (trimmedSaleId.isEmpty) {
+      throw ArgumentError('Sale ID cannot be empty.');
+    }
+
+    if (trimmedInvoiceNumber.isEmpty) {
+      throw ArgumentError('Invoice number cannot be empty.');
+    }
+
     if (discountMinor < 0) {
       throw ArgumentError('Discount cannot be negative.');
     }
@@ -27,8 +50,121 @@ class SaleService {
       throw ArgumentError('Paid amount cannot be negative.');
     }
 
+    if (trimmedStatus != 'completed') {
+      throw ArgumentError(
+        'A completed sale must have status "completed".',
+      );
+    }
+
+    if (trimmedCustomerId != null &&
+        trimmedCustomerId.isEmpty) {
+      throw ArgumentError(
+        'Customer ID cannot be empty.',
+      );
+    }
+
+    final business = await (_database.select(_database.businesses)
+          ..where(
+            (business) =>
+                business.id.equals(trimmedBusinessId),
+          ))
+        .getSingleOrNull();
+
+    if (business == null) {
+      throw StateError(
+        'Business not found: $trimmedBusinessId',
+      );
+    }
+
+    if (!business.isActive) {
+      throw StateError(
+        'Business is inactive: $trimmedBusinessId',
+      );
+    }
+
+    final user = await (_database.select(_database.users)
+          ..where(
+            (user) =>
+                user.id.equals(trimmedUserId) &
+                user.businessId.equals(trimmedBusinessId),
+          ))
+        .getSingleOrNull();
+
+    if (user == null) {
+      throw StateError(
+        'User not found for this business: $trimmedUserId',
+      );
+    }
+
+    if (!user.isActive) {
+      throw StateError(
+        'User is inactive: ${user.name}',
+      );
+    }
+
+    if (trimmedCustomerId != null) {
+      final customer = await (_database.select(
+        _database.customers,
+      )
+            ..where(
+              (customer) =>
+                  customer.id.equals(trimmedCustomerId) &
+                  customer.businessId.equals(
+                    trimmedBusinessId,
+                  ),
+            ))
+          .getSingleOrNull();
+
+      if (customer == null) {
+        throw StateError(
+          'Customer not found for this business: '
+          '$trimmedCustomerId',
+        );
+      }
+
+      if (!customer.isActive) {
+        throw StateError(
+          'Customer is inactive: ${customer.name}',
+        );
+      }
+    }
+
+    final existingSale = await (_database.select(_database.sales)
+          ..where(
+            (sale) =>
+                sale.businessId.equals(trimmedBusinessId) &
+                sale.id.equals(trimmedSaleId),
+          ))
+        .getSingleOrNull();
+
+    if (existingSale != null) {
+      throw StateError(
+        'Sale already exists: $trimmedSaleId',
+      );
+    }
+
+    final existingInvoice =
+        await (_database.select(_database.sales)
+              ..where(
+                (sale) =>
+                    sale.businessId.equals(
+                      trimmedBusinessId,
+                    ) &
+                    sale.invoiceNumber.equals(
+                      trimmedInvoiceNumber,
+                    ),
+              ))
+            .getSingleOrNull();
+
+    if (existingInvoice != null) {
+      throw StateError(
+        'Invoice number already exists: '
+        '$trimmedInvoiceNumber',
+      );
+    }
+
     await validateSaleItems(
-      businessId: businessId,
+      businessId: trimmedBusinessId,
       items: items,
     );
 
@@ -38,17 +174,22 @@ class SaleService {
       final saleItems = <SaleItemInsert>[];
 
       for (final item in items) {
-        final product = await (_database.select(_database.products)
+        final product = await (_database.select(
+          _database.products,
+        )
               ..where(
                 (product) =>
                     product.id.equals(item.productId) &
-                    product.businessId.equals(businessId),
+                    product.businessId.equals(
+                      trimmedBusinessId,
+                    ),
               ))
             .getSingleOrNull();
 
         if (product == null) {
           throw StateError(
-            'Product not found for this business: ${item.productId}',
+            'Product not found for this business: '
+            '${item.productId}',
           );
         }
 
@@ -74,6 +215,8 @@ class SaleService {
             productName: product.name,
             quantity: item.quantity,
             unitPriceMinor: product.salePriceMinor,
+            purchasePriceMinor:
+                product.purchasePriceMinor,
             discountMinor: item.discountMinor,
             lineTotalMinor: lineTotal,
           ),
@@ -86,7 +229,8 @@ class SaleService {
         );
       }
 
-      final totalMinor = subtotalMinor - discountMinor;
+      final totalMinor =
+          subtotalMinor - discountMinor;
 
       if (paidMinor > totalMinor) {
         throw ArgumentError(
@@ -94,22 +238,32 @@ class SaleService {
         );
       }
 
-      final dueMinor = totalMinor - paidMinor;
+      final dueMinor =
+          totalMinor - paidMinor;
+
+      if (dueMinor > 0 &&
+          trimmedCustomerId == null) {
+        throw StateError(
+          'A sale with an outstanding balance '
+          'requires a customer.',
+        );
+      }
+
       final now = DateTime.now();
 
       await _database.into(_database.sales).insert(
             SalesCompanion.insert(
-              id: saleId,
-              businessId: businessId,
-              customerId: Value(customerId),
-              userId: userId,
-              invoiceNumber: invoiceNumber,
+              id: trimmedSaleId,
+              businessId: trimmedBusinessId,
+              customerId: Value(trimmedCustomerId),
+              userId: trimmedUserId,
+              invoiceNumber: trimmedInvoiceNumber,
               subtotalMinor: subtotalMinor,
               discountMinor: Value(discountMinor),
               totalMinor: totalMinor,
               paidMinor: Value(paidMinor),
               dueMinor: Value(dueMinor),
-              status: status,
+              status: trimmedStatus,
               soldAt: soldAt,
               createdAt: now,
             ),
@@ -119,31 +273,42 @@ class SaleService {
         await _database.into(_database.saleItems).insert(
               SaleItemsCompanion.insert(
                 id: item.id,
-                saleId: saleId,
+                saleId: trimmedSaleId,
                 productId: item.productId,
                 productName: item.productName,
                 quantity: item.quantity,
                 unitPriceMinor: item.unitPriceMinor,
-                discountMinor: Value(item.discountMinor),
+                purchasePriceMinor:
+                    item.purchasePriceMinor,
+                discountMinor: Value(
+                  item.discountMinor,
+                ),
                 lineTotalMinor: item.lineTotalMinor,
               ),
             );
 
-        final product = await (_database.select(_database.products)
+        final product = await (_database.select(
+          _database.products,
+        )
               ..where(
                 (product) =>
                     product.id.equals(item.productId) &
-                    product.businessId.equals(businessId),
+                    product.businessId.equals(
+                      trimmedBusinessId,
+                    ),
               ))
             .getSingle();
 
-        final quantityBefore = product.stockQuantity;
+        final quantityBefore =
+            product.stockQuantity;
+
         final quantityAfter =
             quantityBefore - item.quantity;
 
         if (quantityAfter < 0) {
           throw StateError(
-            'Insufficient stock for product: ${product.name}',
+            'Insufficient stock for product: '
+            '${product.name}',
           );
         }
 
@@ -151,7 +316,9 @@ class SaleService {
               ..where(
                 (product) =>
                     product.id.equals(item.productId) &
-                    product.businessId.equals(businessId),
+                    product.businessId.equals(
+                      trimmedBusinessId,
+                    ),
               ))
             .write(
           ProductsCompanion(
@@ -165,9 +332,9 @@ class SaleService {
             .insert(
               InventoryMovementsCompanion.insert(
                 id: _generateId(),
-                businessId: businessId,
+                businessId: trimmedBusinessId,
                 productId: item.productId,
-                saleId: Value(saleId),
+                saleId: Value(trimmedSaleId),
                 quantityChange: -item.quantity,
                 quantityBefore: quantityBefore,
                 quantityAfter: quantityAfter,
@@ -182,10 +349,10 @@ class SaleService {
         await _database.into(_database.payments).insert(
               PaymentsCompanion.insert(
                 id: _generateId(),
-                businessId: businessId,
-                customerId: Value(customerId),
-                saleId: Value(saleId),
-                userId: userId,
+                businessId: trimmedBusinessId,
+                customerId: Value(trimmedCustomerId),
+                saleId: Value(trimmedSaleId),
+                userId: trimmedUserId,
                 amountMinor: paidMinor,
                 paymentMethod: 'cash',
                 paidAt: soldAt,
@@ -195,22 +362,26 @@ class SaleService {
       }
 
       if (dueMinor > 0) {
-        if (customerId == null) {
+        final requiredCustomerId = trimmedCustomerId;
+
+        if (requiredCustomerId == null) {
           throw StateError(
-            'A sale with an outstanding balance requires a customer.',
+            'A sale with an outstanding balance '
+            'requires a customer.',
           );
         }
 
         await _database.into(_database.ledgerEntries).insert(
               LedgerEntriesCompanion.insert(
                 id: _generateId(),
-                businessId: businessId,
-                customerId: customerId,
-                saleId: Value(saleId),
+                businessId: trimmedBusinessId,
+                customerId: requiredCustomerId,
+                saleId: Value(trimmedSaleId),
                 entryType: 'sale_credit',
                 amountMinor: dueMinor,
                 description: Value(
-                  'Credit from sale $invoiceNumber',
+                  'Credit from sale '
+                  '$trimmedInvoiceNumber',
                 ),
                 entryAt: soldAt,
                 createdAt: now,
@@ -218,7 +389,7 @@ class SaleService {
             );
       }
 
-      return saleId;
+      return trimmedSaleId;
     });
   }
 
@@ -239,7 +410,15 @@ class SaleService {
         );
       }
 
-      final product = await (_database.select(_database.products)
+      if (item.discountMinor < 0) {
+        throw ArgumentError(
+          'Sale item discount cannot be negative.',
+        );
+      }
+
+      final product = await (_database.select(
+        _database.products,
+      )
             ..where(
               (product) =>
                   product.id.equals(item.productId) &
@@ -249,7 +428,8 @@ class SaleService {
 
       if (product == null) {
         throw StateError(
-          'Product not found for this business: ${item.productId}',
+          'Product not found for this business: '
+          '${item.productId}',
         );
       }
 
@@ -268,7 +448,8 @@ class SaleService {
   }
 
   String _generateId() {
-    return '${DateTime.now().microsecondsSinceEpoch}-${_idCounter++}';
+    return '${DateTime.now().microsecondsSinceEpoch}-'
+        '${_idCounter++}';
   }
 
   static int _idCounter = 0;
@@ -293,6 +474,7 @@ class SaleItemInsert {
     required this.productName,
     required this.quantity,
     required this.unitPriceMinor,
+    required this.purchasePriceMinor,
     required this.discountMinor,
     required this.lineTotalMinor,
   });
@@ -302,6 +484,7 @@ class SaleItemInsert {
   final String productName;
   final int quantity;
   final int unitPriceMinor;
+  final int purchasePriceMinor;
   final int discountMinor;
   final int lineTotalMinor;
 }

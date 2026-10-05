@@ -35,3 +35,23 @@ class ActiveBusinessIdNotifier extends Notifier<String?> {
     state = null;
   }
 }
+
+final activeUserIdProvider =
+    NotifierProvider<ActiveUserIdNotifier, String?>(
+  ActiveUserIdNotifier.new,
+);
+
+class ActiveUserIdNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    return null;
+  }
+
+  void setUserId(String userId) {
+    state = userId;
+  }
+
+  void clearUser() {
+    state = null;
+  }
+}

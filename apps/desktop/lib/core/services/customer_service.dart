@@ -59,6 +59,31 @@ class CustomerService {
     return customerId;
   }
 
+  Future<List<Customer>> getCustomers({
+    required String businessId,
+    bool activeOnly = false,
+  }) {
+    final query = _database.select(_database.customers)
+      ..where(
+        (customer) => customer.businessId.equals(businessId),
+      );
+
+    if (activeOnly) {
+      query.where(
+        (customer) => customer.isActive.equals(true),
+      );
+    }
+
+    query.orderBy([
+      (customer) => OrderingTerm(
+            expression: customer.name,
+            mode: OrderingMode.asc,
+          ),
+    ]);
+
+    return query.get();
+  }
+
   Future<Customer?> getCustomerById({
     required String businessId,
     required String customerId,

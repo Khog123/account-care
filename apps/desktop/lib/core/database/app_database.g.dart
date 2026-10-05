@@ -3562,6 +3562,16 @@ class $SaleItemsTable extends SaleItems
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _purchasePriceMinorMeta =
+      const VerificationMeta('purchasePriceMinor');
+  @override
+  late final GeneratedColumn<int> purchasePriceMinor = GeneratedColumn<int>(
+    'purchase_price_minor',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _discountMinorMeta = const VerificationMeta(
     'discountMinor',
   );
@@ -3593,6 +3603,7 @@ class $SaleItemsTable extends SaleItems
     productName,
     quantity,
     unitPriceMinor,
+    purchasePriceMinor,
     discountMinor,
     lineTotalMinor,
   ];
@@ -3659,6 +3670,17 @@ class $SaleItemsTable extends SaleItems
     } else if (isInserting) {
       context.missing(_unitPriceMinorMeta);
     }
+    if (data.containsKey('purchase_price_minor')) {
+      context.handle(
+        _purchasePriceMinorMeta,
+        purchasePriceMinor.isAcceptableOrUnknown(
+          data['purchase_price_minor']!,
+          _purchasePriceMinorMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_purchasePriceMinorMeta);
+    }
     if (data.containsKey('discount_minor')) {
       context.handle(
         _discountMinorMeta,
@@ -3712,6 +3734,10 @@ class $SaleItemsTable extends SaleItems
         DriftSqlType.int,
         data['${effectivePrefix}unit_price_minor'],
       )!,
+      purchasePriceMinor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}purchase_price_minor'],
+      )!,
       discountMinor: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}discount_minor'],
@@ -3736,6 +3762,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
   final String productName;
   final int quantity;
   final int unitPriceMinor;
+  final int purchasePriceMinor;
   final int discountMinor;
   final int lineTotalMinor;
   const SaleItem({
@@ -3745,6 +3772,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
     required this.productName,
     required this.quantity,
     required this.unitPriceMinor,
+    required this.purchasePriceMinor,
     required this.discountMinor,
     required this.lineTotalMinor,
   });
@@ -3757,6 +3785,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
     map['product_name'] = Variable<String>(productName);
     map['quantity'] = Variable<int>(quantity);
     map['unit_price_minor'] = Variable<int>(unitPriceMinor);
+    map['purchase_price_minor'] = Variable<int>(purchasePriceMinor);
     map['discount_minor'] = Variable<int>(discountMinor);
     map['line_total_minor'] = Variable<int>(lineTotalMinor);
     return map;
@@ -3770,6 +3799,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       productName: Value(productName),
       quantity: Value(quantity),
       unitPriceMinor: Value(unitPriceMinor),
+      purchasePriceMinor: Value(purchasePriceMinor),
       discountMinor: Value(discountMinor),
       lineTotalMinor: Value(lineTotalMinor),
     );
@@ -3787,6 +3817,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       productName: serializer.fromJson<String>(json['productName']),
       quantity: serializer.fromJson<int>(json['quantity']),
       unitPriceMinor: serializer.fromJson<int>(json['unitPriceMinor']),
+      purchasePriceMinor: serializer.fromJson<int>(json['purchasePriceMinor']),
       discountMinor: serializer.fromJson<int>(json['discountMinor']),
       lineTotalMinor: serializer.fromJson<int>(json['lineTotalMinor']),
     );
@@ -3801,6 +3832,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       'productName': serializer.toJson<String>(productName),
       'quantity': serializer.toJson<int>(quantity),
       'unitPriceMinor': serializer.toJson<int>(unitPriceMinor),
+      'purchasePriceMinor': serializer.toJson<int>(purchasePriceMinor),
       'discountMinor': serializer.toJson<int>(discountMinor),
       'lineTotalMinor': serializer.toJson<int>(lineTotalMinor),
     };
@@ -3813,6 +3845,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
     String? productName,
     int? quantity,
     int? unitPriceMinor,
+    int? purchasePriceMinor,
     int? discountMinor,
     int? lineTotalMinor,
   }) => SaleItem(
@@ -3822,6 +3855,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
     productName: productName ?? this.productName,
     quantity: quantity ?? this.quantity,
     unitPriceMinor: unitPriceMinor ?? this.unitPriceMinor,
+    purchasePriceMinor: purchasePriceMinor ?? this.purchasePriceMinor,
     discountMinor: discountMinor ?? this.discountMinor,
     lineTotalMinor: lineTotalMinor ?? this.lineTotalMinor,
   );
@@ -3837,6 +3871,9 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       unitPriceMinor: data.unitPriceMinor.present
           ? data.unitPriceMinor.value
           : this.unitPriceMinor,
+      purchasePriceMinor: data.purchasePriceMinor.present
+          ? data.purchasePriceMinor.value
+          : this.purchasePriceMinor,
       discountMinor: data.discountMinor.present
           ? data.discountMinor.value
           : this.discountMinor,
@@ -3855,6 +3892,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           ..write('productName: $productName, ')
           ..write('quantity: $quantity, ')
           ..write('unitPriceMinor: $unitPriceMinor, ')
+          ..write('purchasePriceMinor: $purchasePriceMinor, ')
           ..write('discountMinor: $discountMinor, ')
           ..write('lineTotalMinor: $lineTotalMinor')
           ..write(')'))
@@ -3869,6 +3907,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
     productName,
     quantity,
     unitPriceMinor,
+    purchasePriceMinor,
     discountMinor,
     lineTotalMinor,
   );
@@ -3882,6 +3921,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           other.productName == this.productName &&
           other.quantity == this.quantity &&
           other.unitPriceMinor == this.unitPriceMinor &&
+          other.purchasePriceMinor == this.purchasePriceMinor &&
           other.discountMinor == this.discountMinor &&
           other.lineTotalMinor == this.lineTotalMinor);
 }
@@ -3893,6 +3933,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
   final Value<String> productName;
   final Value<int> quantity;
   final Value<int> unitPriceMinor;
+  final Value<int> purchasePriceMinor;
   final Value<int> discountMinor;
   final Value<int> lineTotalMinor;
   final Value<int> rowid;
@@ -3903,6 +3944,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     this.productName = const Value.absent(),
     this.quantity = const Value.absent(),
     this.unitPriceMinor = const Value.absent(),
+    this.purchasePriceMinor = const Value.absent(),
     this.discountMinor = const Value.absent(),
     this.lineTotalMinor = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -3914,6 +3956,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     required String productName,
     required int quantity,
     required int unitPriceMinor,
+    required int purchasePriceMinor,
     this.discountMinor = const Value.absent(),
     required int lineTotalMinor,
     this.rowid = const Value.absent(),
@@ -3923,6 +3966,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
        productName = Value(productName),
        quantity = Value(quantity),
        unitPriceMinor = Value(unitPriceMinor),
+       purchasePriceMinor = Value(purchasePriceMinor),
        lineTotalMinor = Value(lineTotalMinor);
   static Insertable<SaleItem> custom({
     Expression<String>? id,
@@ -3931,6 +3975,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     Expression<String>? productName,
     Expression<int>? quantity,
     Expression<int>? unitPriceMinor,
+    Expression<int>? purchasePriceMinor,
     Expression<int>? discountMinor,
     Expression<int>? lineTotalMinor,
     Expression<int>? rowid,
@@ -3942,6 +3987,8 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       if (productName != null) 'product_name': productName,
       if (quantity != null) 'quantity': quantity,
       if (unitPriceMinor != null) 'unit_price_minor': unitPriceMinor,
+      if (purchasePriceMinor != null)
+        'purchase_price_minor': purchasePriceMinor,
       if (discountMinor != null) 'discount_minor': discountMinor,
       if (lineTotalMinor != null) 'line_total_minor': lineTotalMinor,
       if (rowid != null) 'rowid': rowid,
@@ -3955,6 +4002,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     Value<String>? productName,
     Value<int>? quantity,
     Value<int>? unitPriceMinor,
+    Value<int>? purchasePriceMinor,
     Value<int>? discountMinor,
     Value<int>? lineTotalMinor,
     Value<int>? rowid,
@@ -3966,6 +4014,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       productName: productName ?? this.productName,
       quantity: quantity ?? this.quantity,
       unitPriceMinor: unitPriceMinor ?? this.unitPriceMinor,
+      purchasePriceMinor: purchasePriceMinor ?? this.purchasePriceMinor,
       discountMinor: discountMinor ?? this.discountMinor,
       lineTotalMinor: lineTotalMinor ?? this.lineTotalMinor,
       rowid: rowid ?? this.rowid,
@@ -3993,6 +4042,9 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     if (unitPriceMinor.present) {
       map['unit_price_minor'] = Variable<int>(unitPriceMinor.value);
     }
+    if (purchasePriceMinor.present) {
+      map['purchase_price_minor'] = Variable<int>(purchasePriceMinor.value);
+    }
     if (discountMinor.present) {
       map['discount_minor'] = Variable<int>(discountMinor.value);
     }
@@ -4014,6 +4066,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
           ..write('productName: $productName, ')
           ..write('quantity: $quantity, ')
           ..write('unitPriceMinor: $unitPriceMinor, ')
+          ..write('purchasePriceMinor: $purchasePriceMinor, ')
           ..write('discountMinor: $discountMinor, ')
           ..write('lineTotalMinor: $lineTotalMinor, ')
           ..write('rowid: $rowid')
@@ -8344,6 +8397,7 @@ typedef $$SaleItemsTableCreateCompanionBuilder = SaleItemsCompanion Function({
   required String productName,
   required int quantity,
   required int unitPriceMinor,
+  required int purchasePriceMinor,
   Value<int> discountMinor,
   required int lineTotalMinor,
   Value<int> rowid,
@@ -8355,6 +8409,7 @@ typedef $$SaleItemsTableUpdateCompanionBuilder = SaleItemsCompanion Function({
   Value<String> productName,
   Value<int> quantity,
   Value<int> unitPriceMinor,
+  Value<int> purchasePriceMinor,
   Value<int> discountMinor,
   Value<int> lineTotalMinor,
   Value<int> rowid,
@@ -8396,6 +8451,11 @@ class $$SaleItemsTableFilterComposer
 
   ColumnFilters<int> get unitPriceMinor => $composableBuilder(
     column: $table.unitPriceMinor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get purchasePriceMinor => $composableBuilder(
+    column: $table.purchasePriceMinor,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8449,6 +8509,11 @@ class $$SaleItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get purchasePriceMinor => $composableBuilder(
+    column: $table.purchasePriceMinor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get discountMinor => $composableBuilder(
     column: $table.discountMinor,
     builder: (column) => ColumnOrderings(column),
@@ -8488,6 +8553,11 @@ class $$SaleItemsTableAnnotationComposer
 
   GeneratedColumn<int> get unitPriceMinor => $composableBuilder(
     column: $table.unitPriceMinor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get purchasePriceMinor => $composableBuilder(
+    column: $table.purchasePriceMinor,
     builder: (column) => column,
   );
 
@@ -8536,6 +8606,7 @@ class $$SaleItemsTableTableManager
                 Value<String> productName = const Value.absent(),
                 Value<int> quantity = const Value.absent(),
                 Value<int> unitPriceMinor = const Value.absent(),
+                Value<int> purchasePriceMinor = const Value.absent(),
                 Value<int> discountMinor = const Value.absent(),
                 Value<int> lineTotalMinor = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -8546,6 +8617,7 @@ class $$SaleItemsTableTableManager
                 productName: productName,
                 quantity: quantity,
                 unitPriceMinor: unitPriceMinor,
+                purchasePriceMinor: purchasePriceMinor,
                 discountMinor: discountMinor,
                 lineTotalMinor: lineTotalMinor,
                 rowid: rowid,
@@ -8558,6 +8630,7 @@ class $$SaleItemsTableTableManager
                 required String productName,
                 required int quantity,
                 required int unitPriceMinor,
+                required int purchasePriceMinor,
                 Value<int> discountMinor = const Value.absent(),
                 required int lineTotalMinor,
                 Value<int> rowid = const Value.absent(),
@@ -8568,6 +8641,7 @@ class $$SaleItemsTableTableManager
                 productName: productName,
                 quantity: quantity,
                 unitPriceMinor: unitPriceMinor,
+                purchasePriceMinor: purchasePriceMinor,
                 discountMinor: discountMinor,
                 lineTotalMinor: lineTotalMinor,
                 rowid: rowid,

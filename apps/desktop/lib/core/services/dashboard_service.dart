@@ -73,26 +73,20 @@ class DashboardService {
           .get();
 
       for (final item in items) {
-        final product = await (_database.select(_database.products)
-              ..where(
-                (product) =>
-                    product.id.equals(item.productId) &
-                    product.businessId.equals(businessId),
-              ))
-            .getSingleOrNull();
+        final itemProfit =
+            (item.unitPriceMinor - item.purchasePriceMinor) *
+                item.quantity -
+            item.discountMinor;
 
-        if (product != null) {
-          todayProfitMinor +=
-              (item.unitPriceMinor - product.purchasePriceMinor) *
-                  item.quantity -
-              item.discountMinor;
-        }
+        todayProfitMinor += itemProfit;
       }
     }
 
     final customers = await (_database.select(_database.customers)
           ..where(
-            (customer) => customer.businessId.equals(businessId),
+            (customer) =>
+                customer.businessId.equals(businessId) &
+                customer.isActive.equals(true),
           ))
         .get();
 

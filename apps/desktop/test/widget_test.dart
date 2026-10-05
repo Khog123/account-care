@@ -32,12 +32,28 @@ void main() {
       ),
     );
 
+    await database.into(database.users).insert(
+      UsersCompanion.insert(
+        id: 'test-user',
+        businessId: 'test-business',
+        name: 'Test User',
+        username: 'testuser',
+        passwordHash: 'test-password-hash',
+        role: 'master_merchant',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           databaseProvider.overrideWithValue(database),
           activeBusinessIdProvider.overrideWith(
             TestActiveBusinessIdNotifier.new,
+          ),
+          activeUserIdProvider.overrideWith(
+            TestActiveUserIdNotifier.new,
           ),
         ],
         child: const AccountCareApp(),
@@ -62,9 +78,18 @@ void main() {
   });
 }
 
-class TestActiveBusinessIdNotifier extends ActiveBusinessIdNotifier {
+class TestActiveBusinessIdNotifier
+    extends ActiveBusinessIdNotifier {
   @override
   String? build() {
     return 'test-business';
   }
 }
+
+class TestActiveUserIdNotifier
+    extends ActiveUserIdNotifier {
+  @override
+  String? build() {
+    return 'test-user';
+  }
+} 

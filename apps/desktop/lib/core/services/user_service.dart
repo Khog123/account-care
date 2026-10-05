@@ -74,6 +74,31 @@ class UserService {
     return userId;
   }
 
+  Future<List<User>> getUsers({
+    required String businessId,
+    bool activeOnly = false,
+  }) {
+    final query = _database.select(_database.users)
+      ..where(
+        (user) => user.businessId.equals(businessId),
+      );
+
+    if (activeOnly) {
+      query.where(
+        (user) => user.isActive.equals(true),
+      );
+    }
+
+    query.orderBy([
+      (user) => OrderingTerm(
+            expression: user.name,
+            mode: OrderingMode.asc,
+          ),
+    ]);
+
+    return query.get();
+  }
+
   Future<User?> getUserById({
     required String businessId,
     required String userId,
