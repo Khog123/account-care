@@ -198,7 +198,121 @@ void main() {
     expect(ledgerEntries, isEmpty);
   });
 
-    test('rejects a payment greater than the customer balance', () async {
+  test('rejects payment for an inactive customer', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-1',
+            businessId: 'business-1',
+            name: 'Test User',
+            username: 'test-user',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.customers).insert(
+          CustomersCompanion.insert(
+            id: 'customer-1',
+            businessId: 'business-1',
+            name: 'Inactive Customer',
+            isActive: const Value(false),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await expectLater(
+      paymentService.recordPayment(
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        userId: 'user-1',
+        paymentId: 'payment-4',
+        amountMinor: 1000,
+        paymentMethod: 'cash',
+        paidAt: now,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final payments = await database.select(database.payments).get();
+    expect(payments, isEmpty);
+
+    final ledgerEntries =
+        await database.select(database.ledgerEntries).get();
+    expect(ledgerEntries, isEmpty);
+  });
+
+  test('rejects payment recorded by an inactive user', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-1',
+            businessId: 'business-1',
+            name: 'Inactive User',
+            username: 'inactive-user',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            isActive: const Value(false),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.customers).insert(
+          CustomersCompanion.insert(
+            id: 'customer-1',
+            businessId: 'business-1',
+            name: 'Test Customer',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await expectLater(
+      paymentService.recordPayment(
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        userId: 'user-1',
+        paymentId: 'payment-5',
+        amountMinor: 1000,
+        paymentMethod: 'cash',
+        paidAt: now,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final payments = await database.select(database.payments).get();
+    expect(payments, isEmpty);
+
+    final ledgerEntries =
+        await database.select(database.ledgerEntries).get();
+    expect(ledgerEntries, isEmpty);
+  });
+
+  test('rolls back when payment ID already exists', () async {
     final now = DateTime.now();
 
     await database.into(database.businesses).insert(
@@ -228,9 +342,21 @@ void main() {
             id: 'customer-1',
             businessId: 'business-1',
             name: 'Test Customer',
-            openingBalanceMinor: const Value(2000),
             createdAt: now,
             updatedAt: now,
+          ),
+        );
+
+    await database.into(database.payments).insert(
+          PaymentsCompanion.insert(
+            id: 'payment-6',
+            businessId: 'business-1',
+            customerId: const Value('customer-1'),
+            userId: 'user-1',
+            amountMinor: 1000,
+            paymentMethod: 'cash',
+            paidAt: now,
+            createdAt: now,
           ),
         );
 
@@ -239,19 +365,22 @@ void main() {
         businessId: 'business-1',
         customerId: 'customer-1',
         userId: 'user-1',
-        paymentId: 'payment-4',
-        amountMinor: 2500,
+        paymentId: 'payment-6',
+        amountMinor: 500,
         paymentMethod: 'cash',
         paidAt: now,
       ),
-      throwsA(isA<ArgumentError>()),
+      throwsA(isA<Exception>()),
     );
 
     final payments = await database.select(database.payments).get();
-    expect(payments, isEmpty);
+
+    expect(payments.length, 1);
+    expect(payments.single.amountMinor, 1000);
 
     final ledgerEntries =
         await database.select(database.ledgerEntries).get();
+
     expect(ledgerEntries, isEmpty);
   });
 }

@@ -66,7 +66,7 @@ void main() {
     expect(
       expense.expenseAt,
       now.copyWith(microsecond: 0, millisecond: 0),
-      );
+    );
   });
 
   test('rejects zero expense amount', () async {
@@ -246,6 +246,49 @@ void main() {
     expect(expenses, isEmpty);
   });
 
+  test('rejects an inactive user', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-1',
+            businessId: 'business-1',
+            name: 'Inactive User',
+            username: 'inactive-user',
+            passwordHash: 'hashed-password',
+            role: 'master_merchant',
+            isActive: const Value(false),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    expect(
+      () => expenseService.recordExpense(
+        businessId: 'business-1',
+        userId: 'user-1',
+        expenseId: 'expense-1',
+        category: 'Rent',
+        amountMinor: 25000,
+        expenseAt: now,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final expenses = await database.select(database.expenses).get();
+
+    expect(expenses, isEmpty);
+  });
+
   test('gets an expense by id', () async {
     final now = DateTime.now();
 
@@ -350,5 +393,62 @@ void main() {
     );
 
     expect(expense, isNull);
+  });
+
+  test('rejects a duplicate expense ID', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-1',
+            businessId: 'business-1',
+            name: 'Test User',
+            username: 'testuser',
+            passwordHash: 'hashed-password',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.expenses).insert(
+          ExpensesCompanion.insert(
+            id: 'expense-1',
+            businessId: 'business-1',
+            userId: 'user-1',
+            category: 'Rent',
+            amountMinor: 25000,
+            expenseAt: now,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await expectLater(
+      expenseService.recordExpense(
+        businessId: 'business-1',
+        userId: 'user-1',
+        expenseId: 'expense-1',
+        category: 'Utilities',
+        amountMinor: 5000,
+        expenseAt: now,
+      ),
+      throwsA(isA<Exception>()),
+    );
+
+    final expenses = await database.select(database.expenses).get();
+
+    expect(expenses.length, 1);
+    expect(expenses.single.amountMinor, 25000);
+    expect(expenses.single.category, 'Rent');
   });
 }

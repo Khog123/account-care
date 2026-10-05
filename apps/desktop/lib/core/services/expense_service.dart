@@ -42,6 +42,12 @@ class ExpenseService {
       );
     }
 
+    if (!user.isActive) {
+      throw StateError(
+        'User is inactive: ${user.name}',
+      );
+    }
+
     final now = DateTime.now();
 
     await _database.into(_database.expenses).insert(
