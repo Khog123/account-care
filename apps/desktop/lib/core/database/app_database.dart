@@ -38,7 +38,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   AppDatabase.test() : super(NativeDatabase.memory());
-  
+
   @override
   int get schemaVersion => 1;
 }

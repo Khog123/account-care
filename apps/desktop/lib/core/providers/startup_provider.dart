@@ -22,18 +22,27 @@ final startupProvider = FutureProvider<String>((ref) async {
 
   final users = await userService.getUsers(
     businessId: firstBusiness.id,
-    activeOnly: true,
+    activeOnly: false,
   );
 
   if (users.isEmpty) {
     throw StateError(
-      'No active user exists for business: ${firstBusiness.name}',
+      'No users exist for business: ${firstBusiness.name}',
+    );
+  }
+
+  final activeUsers = users.where((user) => user.isActive).toList();
+
+  if (activeUsers.isEmpty) {
+    throw StateError(
+      'Users exist but none are active for business: '
+      '${firstBusiness.name}',
     );
   }
 
   ref
       .read(activeUserIdProvider.notifier)
-      .setUserId(users.first.id);
+      .setUserId(activeUsers.first.id);
 
   return '/';
 });

@@ -65,22 +65,28 @@ class DashboardService {
 
     var todayProfitMinor = 0;
 
-    for (final sale in sales) {
-      final items = await (_database.select(_database.saleItems)
-            ..where(
-              (item) => item.saleId.equals(sale.id),
-            ))
-          .get();
+for (final sale in sales) {
+  final items = await (_database.select(_database.saleItems)
+        ..where(
+          (item) => item.saleId.equals(sale.id),
+        ))
+      .get();
 
-      for (final item in items) {
-        final itemProfit =
-            (item.unitPriceMinor - item.purchasePriceMinor) *
-                item.quantity -
-            item.discountMinor;
+  var saleProfitMinor = 0;
 
-        todayProfitMinor += itemProfit;
-      }
-    }
+  for (final item in items) {
+    final itemProfit =
+        (item.unitPriceMinor - item.purchasePriceMinor) *
+            item.quantity -
+        item.discountMinor;
+
+    saleProfitMinor += itemProfit;
+  }
+
+  saleProfitMinor -= sale.discountMinor;
+
+  todayProfitMinor += saleProfitMinor;
+}
 
     final customers = await (_database.select(_database.customers)
           ..where(

@@ -86,7 +86,50 @@ void main() {
 
     expect(summary.todaySalesMinor, 15000);
   });
+  
+    test('calculates profit after sale-level discount', () async {
+    await insertBusiness();
 
+    final now = DateTime.now();
+
+    await database.into(database.sales).insert(
+          SalesCompanion.insert(
+            id: 'sale-1',
+            businessId: 'business-1',
+            userId: 'user-1',
+            invoiceNumber: 'INV-001',
+            subtotalMinor: 10000,
+            discountMinor: Value(1000),
+            totalMinor: 9000,
+            paidMinor: Value(9000),
+            dueMinor: Value(0),
+            status: 'completed',
+            soldAt: now,
+            createdAt: now,
+          ),
+        );
+
+    await database.into(database.saleItems).insert(
+          SaleItemsCompanion.insert(
+            id: 'sale-item-1',
+            saleId: 'sale-1',
+            productId: 'product-1',
+            productName: 'Test Product',
+            quantity: 1,
+            unitPriceMinor: 10000,
+            purchasePriceMinor: 6000,
+            lineTotalMinor: 10000,
+          ),
+        );
+
+    final summary = await dashboardService.getSummary(
+      businessId: 'business-1',
+    );
+
+    expect(summary.todaySalesMinor, 9000);
+    expect(summary.todayProfitMinor, 3000);
+  });
+  
   test('does not include sales from another business', () async {
     await insertBusiness(businessId: 'business-1');
     await insertBusiness(businessId: 'business-2');
