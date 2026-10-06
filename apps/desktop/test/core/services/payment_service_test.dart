@@ -385,7 +385,179 @@ void main() {
 
     expect(ledgerEntries, isEmpty);
   });
-}
 
+  test('records a partial payment and leaves the remaining balance', () async {
+    final now = DateTime.now();
 
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-2',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-2',
+            businessId: 'business-2',
+            name: 'Test User',
+            username: 'test-user-2',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.customers).insert(
+          CustomersCompanion.insert(
+            id: 'customer-2',
+            businessId: 'business-2',
+            name: 'Test Customer',
+            openingBalanceMinor: Value(2000),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    final paymentId = await paymentService.recordPayment(
+      businessId: 'business-2',
+      customerId: 'customer-2',
+      userId: 'user-2',
+      paymentId: 'payment-7',
+      amountMinor: 1000,
+      paymentMethod: 'cash',
+      paidAt: now,
+    );
+
+    expect(paymentId, 'payment-7');
+
+    final ledgerEntries =
+        await database.select(database.ledgerEntries).get();
+
+    expect(ledgerEntries, hasLength(1));
+    expect(ledgerEntries.single.entryType, 'payment');
+    expect(ledgerEntries.single.amountMinor, 1000);
+
+    final remainingBalance =
+        2000 - ledgerEntries.single.amountMinor;
+
+    expect(remainingBalance, 1000);
+  });
+
+  test('rejects a payment greater than the outstanding balance', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-3',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-3',
+            businessId: 'business-3',
+            name: 'Test User',
+            username: 'test-user-3',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.customers).insert(
+          CustomersCompanion.insert(
+            id: 'customer-3',
+            businessId: 'business-3',
+            name: 'Test Customer',
+            openingBalanceMinor: Value(2000),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await expectLater(
+      paymentService.recordPayment(
+        businessId: 'business-3',
+        customerId: 'customer-3',
+        userId: 'user-3',
+        paymentId: 'payment-8',
+        amountMinor: 2001,
+        paymentMethod: 'cash',
+        paidAt: now,
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+
+    final payments = await database.select(database.payments).get();
+    expect(payments, isEmpty);
+
+    final ledgerEntries =
+        await database.select(database.ledgerEntries).get();
+    expect(ledgerEntries, isEmpty);
+  });
+
+  test('rejects a payment when the customer has no outstanding balance',
+      () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-4',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-4',
+            businessId: 'business-4',
+            name: 'Test User',
+            username: 'test-user-4',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.customers).insert(
+          CustomersCompanion.insert(
+            id: 'customer-4',
+            businessId: 'business-4',
+            name: 'Test Customer',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await expectLater(
+      paymentService.recordPayment(
+        businessId: 'business-4',
+        customerId: 'customer-4',
+        userId: 'user-4',
+        paymentId: 'payment-9',
+        amountMinor: 1000,
+        paymentMethod: 'cash',
+        paidAt: now,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final payments = await database.select(database.payments).get();
+    expect(payments, isEmpty);
+
+    final ledgerEntries =
+        await database.select(database.ledgerEntries).get();
+    expect(ledgerEntries, isEmpty);
+  });}
 
