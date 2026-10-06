@@ -3570,7 +3570,8 @@ class $SaleItemsTable extends SaleItems
     aliasedName,
     false,
     type: DriftSqlType.int,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
   );
   static const VerificationMeta _discountMinorMeta = const VerificationMeta(
     'discountMinor',
@@ -3678,8 +3679,6 @@ class $SaleItemsTable extends SaleItems
           _purchasePriceMinorMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_purchasePriceMinorMeta);
     }
     if (data.containsKey('discount_minor')) {
       context.handle(
@@ -3956,7 +3955,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     required String productName,
     required int quantity,
     required int unitPriceMinor,
-    required int purchasePriceMinor,
+    this.purchasePriceMinor = const Value.absent(),
     this.discountMinor = const Value.absent(),
     required int lineTotalMinor,
     this.rowid = const Value.absent(),
@@ -3966,7 +3965,6 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
        productName = Value(productName),
        quantity = Value(quantity),
        unitPriceMinor = Value(unitPriceMinor),
-       purchasePriceMinor = Value(purchasePriceMinor),
        lineTotalMinor = Value(lineTotalMinor);
   static Insertable<SaleItem> custom({
     Expression<String>? id,
@@ -8397,7 +8395,7 @@ typedef $$SaleItemsTableCreateCompanionBuilder = SaleItemsCompanion Function({
   required String productName,
   required int quantity,
   required int unitPriceMinor,
-  required int purchasePriceMinor,
+  Value<int> purchasePriceMinor,
   Value<int> discountMinor,
   required int lineTotalMinor,
   Value<int> rowid,
@@ -8630,7 +8628,7 @@ class $$SaleItemsTableTableManager
                 required String productName,
                 required int quantity,
                 required int unitPriceMinor,
-                required int purchasePriceMinor,
+                Value<int> purchasePriceMinor = const Value.absent(),
                 Value<int> discountMinor = const Value.absent(),
                 required int lineTotalMinor,
                 Value<int> rowid = const Value.absent(),

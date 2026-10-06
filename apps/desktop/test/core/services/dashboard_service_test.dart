@@ -117,7 +117,7 @@ void main() {
             productName: 'Test Product',
             quantity: 1,
             unitPriceMinor: 10000,
-            purchasePriceMinor: 6000,
+            purchasePriceMinor: Value(6000),
             lineTotalMinor: 10000,
           ),
         );

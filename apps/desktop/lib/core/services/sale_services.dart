@@ -278,8 +278,9 @@ class SaleService {
                 productName: item.productName,
                 quantity: item.quantity,
                 unitPriceMinor: item.unitPriceMinor,
-                purchasePriceMinor:
+                purchasePriceMinor: Value(
                     item.purchasePriceMinor,
+                  ),
                 discountMinor: Value(
                   item.discountMinor,
                 ),

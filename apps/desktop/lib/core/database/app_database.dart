@@ -40,24 +40,33 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.test() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (Migrator m) async {
+      await m.createAll();
+    },
+
+    onUpgrade: (Migrator m, int from, int to) async {
+      if (from < 2) {
+        await m.addColumn(saleItems, saleItems.purchasePriceMinor);
+      }
+    },
+  );
 }
 
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final directory = await getApplicationSupportDirectory();
 
-    final databaseDirectory = Directory(
-      p.join(directory.path, 'account_care'),
-    );
+    final databaseDirectory = Directory(p.join(directory.path, 'account_care'));
 
     if (!databaseDirectory.existsSync()) {
       databaseDirectory.createSync(recursive: true);
     }
 
-    final file = File(
-      p.join(databaseDirectory.path, 'account_care.sqlite'),
-    );
+    final file = File(p.join(databaseDirectory.path, 'account_care.sqlite'));
 
     return NativeDatabase.createInBackground(file);
   });

@@ -360,7 +360,7 @@ void main() {
             productName: 'Product A',
             quantity: 5,
             unitPriceMinor: 1000,
-            purchasePriceMinor: 500,
+            purchasePriceMinor: Value(500),
             lineTotalMinor: 5000,
           ),
         );
@@ -385,7 +385,7 @@ void main() {
             productName: 'Product B',
             quantity: 3,
             unitPriceMinor: 1500,
-            purchasePriceMinor: 700,
+            purchasePriceMinor: Value(700),
             lineTotalMinor: 4500,
           ),
         );

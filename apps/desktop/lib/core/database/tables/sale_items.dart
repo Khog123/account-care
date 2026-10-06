@@ -14,7 +14,8 @@ class SaleItems extends Table {
 
   IntColumn get unitPriceMinor => integer()();
 
-  IntColumn get purchasePriceMinor => integer()();
+  IntColumn get purchasePriceMinor =>
+      integer().withDefault(const Constant(0))();
 
   IntColumn get discountMinor =>
       integer().withDefault(const Constant(0))();
