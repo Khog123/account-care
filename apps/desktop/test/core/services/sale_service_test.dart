@@ -521,4 +521,113 @@ expect(ledgerEntries, isEmpty);
     expect(ledgerEntries.single.amountMinor, 2000);
     expect(ledgerEntries.single.entryType, 'sale_credit');
   });
+
+  test('completes an overpayment sale with payment capped at total',
+      () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.users).insert(
+          UsersCompanion.insert(
+            id: 'user-1',
+            businessId: 'business-1',
+            name: 'Test User',
+            username: 'test-user',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.categories).insert(
+          CategoriesCompanion.insert(
+            id: 'category-1',
+            businessId: 'business-1',
+            name: 'General',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-1',
+            businessId: 'business-1',
+            categoryId: 'category-1',
+            name: 'Overpayment Product',
+            purchasePriceMinor: 500,
+            salePriceMinor: 1000,
+            stockQuantity: 10,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    final saleId = await saleService.completeSale(
+      businessId: 'business-1',
+      userId: 'user-1',
+      saleId: 'sale-overpayment-1',
+      invoiceNumber: 'INV-OVER-001',
+      items: const [
+        SaleItemRequest(
+          productId: 'product-1',
+          quantity: 1,
+        ),
+      ],
+      // The customer tenders Rs. 1500, but the applied payment
+      // is capped at the Rs. 1000 sale total by the UI.
+      paidMinor: 1000,
+      status: 'completed',
+      soldAt: now,
+    );
+
+    expect(saleId, 'sale-overpayment-1');
+
+    final sale = await (database.select(database.sales)
+          ..where(
+            (sale) => sale.id.equals('sale-overpayment-1'),
+          ))
+        .getSingle();
+
+    expect(sale.totalMinor, 1000);
+    expect(sale.paidMinor, 1000);
+    expect(sale.dueMinor, 0);
+
+    final payments = await (database.select(database.payments)
+          ..where(
+            (payment) => payment.saleId.equals('sale-overpayment-1'),
+          ))
+        .get();
+
+    expect(payments.length, 1);
+    expect(payments.single.amountMinor, 1000);
+    expect(payments.single.paymentMethod, 'cash');
+
+    final ledgerEntries =
+        await (database.select(database.ledgerEntries)
+              ..where(
+                (entry) =>
+                    entry.saleId.equals('sale-overpayment-1'),
+              ))
+            .get();
+
+    expect(ledgerEntries, isEmpty);
+
+    final product = await (database.select(database.products)
+          ..where(
+            (product) => product.id.equals('product-1'),
+          ))
+        .getSingle();
+
+    expect(product.stockQuantity, 9);
+  });
 }
