@@ -1,16 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
-import '../features/customers/presentation/customers_page.dart';
-import '../features/dashboard/presentation/dashboard_page.dart';
-import '../features/payments/presentation/payments_page.dart';
+import 'package:desktop/features/customers/presentation/customers_page.dart';
+import 'package:desktop/features/dashboard/presentation/dashboard_page.dart';
+import 'package:desktop/features/payments/presentation/payments_page.dart';
 import '../features/products/presentation/products_page.dart';
-import '../features/reports/presentation/reports_page.dart';
-import '../features/sales/presentation/sales_page.dart';
-import '../features/settings/presentation/business_setup_page.dart';
-import '../features/settings/presentation/settings_page.dart';
-import '../features/startup/presentation/startup_page.dart';
-import '../features/udhaar/presentation/udhaar_page.dart';
+import 'package:desktop/features/reports/presentation/reports_page.dart';
+import 'package:desktop/features/sales/presentation/sales_page.dart';
+import 'package:desktop/features/settings/presentation/business_setup_page.dart';
+import 'package:desktop/features/settings/presentation/settings_page.dart';
+import 'package:desktop/features/startup/presentation/startup_page.dart';
+import 'package:desktop/features/udhaar/presentation/udhaar_page.dart';
+
 import 'shell/app_shell.dart';
 
 final GoRouter appRouter = GoRouter(
@@ -91,3 +92,4 @@ final GoRouter appRouter = GoRouter(
     ),
   ],
 );
+

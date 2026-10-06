@@ -19,6 +19,24 @@ final productListProvider = FutureProvider<List<Product>>((ref) async {
   );
 });
 
+final archivedProductListProvider =
+    FutureProvider<List<Product>>((ref) async {
+  final businessId = ref.watch(activeBusinessIdProvider);
+
+  if (businessId == null || businessId.isEmpty) {
+    throw StateError('No active business selected.');
+  }
+
+  final productService = ref.watch(productServiceProvider);
+
+  final products = await productService.getProducts(
+    businessId: businessId,
+    activeOnly: false,
+  );
+
+  return products.where((product) => !product.isActive).toList();
+});
+
 final activeCategoryListProvider =
     FutureProvider<List<Category>>((ref) async {
   final businessId = ref.watch(activeBusinessIdProvider);
