@@ -15,6 +15,7 @@ final productListProvider = FutureProvider<List<Product>>((ref) async {
 
   return productService.getProducts(
     businessId: businessId,
+    activeOnly: true,
   );
 });
 

@@ -97,7 +97,7 @@ class ProductService {
     return productId;
   }
 
-    Future<List<Product>> getProducts({
+  Future<List<Product>> getProducts({
     required String businessId,
     bool activeOnly = false,
   }) {
@@ -223,6 +223,78 @@ class ProductService {
         stockQuantity: Value(stockQuantity),
         lowStockThreshold: Value(lowStockThreshold),
         isActive: Value(isActive),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> deactivateProduct({
+    required String businessId,
+    required String productId,
+  }) async {
+    final product = await (_database.select(_database.products)
+          ..where(
+            (product) =>
+                product.id.equals(productId) &
+                product.businessId.equals(businessId),
+          ))
+        .getSingleOrNull();
+
+    if (product == null) {
+      throw StateError(
+        'Product not found for this business: $productId',
+      );
+    }
+
+    if (!product.isActive) {
+      return;
+    }
+
+    await (_database.update(_database.products)
+          ..where(
+            (product) =>
+                product.id.equals(productId) &
+                product.businessId.equals(businessId),
+          ))
+        .write(
+      ProductsCompanion(
+        isActive: const Value(false),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> restoreProduct({
+    required String businessId,
+    required String productId,
+  }) async {
+    final product = await (_database.select(_database.products)
+          ..where(
+            (product) =>
+                product.id.equals(productId) &
+                product.businessId.equals(businessId),
+          ))
+        .getSingleOrNull();
+
+    if (product == null) {
+      throw StateError(
+        'Product not found for this business: $productId',
+      );
+    }
+
+    if (product.isActive) {
+      return;
+    }
+
+    await (_database.update(_database.products)
+          ..where(
+            (product) =>
+                product.id.equals(productId) &
+                product.businessId.equals(businessId),
+          ))
+        .write(
+      ProductsCompanion(
+        isActive: const Value(true),
         updatedAt: Value(DateTime.now()),
       ),
     );

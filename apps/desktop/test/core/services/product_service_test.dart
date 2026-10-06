@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
- 
+import 'package:drift/drift.dart' show Value;
+
 import 'package:desktop/core/database/app_database.dart';
 import 'package:desktop/core/services/product_service.dart';
 
@@ -387,5 +388,166 @@ void main() {
         .getSingle();
 
     expect(product.name, 'Original Product');
+  });
+
+  test('deactivates a product without deleting it', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.categories).insert(
+          CategoriesCompanion.insert(
+            id: 'category-1',
+            businessId: 'business-1',
+            name: 'Beverages',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-1',
+            businessId: 'business-1',
+            categoryId: 'category-1',
+            name: 'Cola',
+            purchasePriceMinor: 5000,
+            salePriceMinor: 8000,
+            stockQuantity: 10,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await productService.deactivateProduct(
+      businessId: 'business-1',
+      productId: 'product-1',
+    );
+
+    final product = await (database.select(database.products)
+          ..where((product) => product.id.equals('product-1')))
+        .getSingle();
+
+    expect(product.isActive, isFalse);
+    expect(product.stockQuantity, 10);
+    expect(product.name, 'Cola');
+  });
+
+  test('restores a deactivated product', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.categories).insert(
+          CategoriesCompanion.insert(
+            id: 'category-1',
+            businessId: 'business-1',
+            name: 'Beverages',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-1',
+            businessId: 'business-1',
+            categoryId: 'category-1',
+            name: 'Cola',
+            purchasePriceMinor: 5000,
+            salePriceMinor: 8000,
+            stockQuantity: 10,
+            isActive: const Value(false),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await productService.restoreProduct(
+      businessId: 'business-1',
+      productId: 'product-1',
+    );
+
+    final product = await (database.select(database.products)
+          ..where((product) => product.id.equals('product-1')))
+        .getSingle();
+
+    expect(product.isActive, isTrue);
+    expect(product.stockQuantity, 10);
+    expect(product.name, 'Cola');
+  });
+
+  test('does not deactivate a product from another business', () async {
+    final now = DateTime.now();
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-1',
+            name: 'Business One',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.businesses).insert(
+          BusinessesCompanion.insert(
+            id: 'business-2',
+            name: 'Business Two',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.categories).insert(
+          CategoriesCompanion.insert(
+            id: 'category-2',
+            businessId: 'business-2',
+            name: 'Other Category',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database.into(database.products).insert(
+          ProductsCompanion.insert(
+            id: 'product-1',
+            businessId: 'business-2',
+            categoryId: 'category-2',
+            name: 'Other Product',
+            purchasePriceMinor: 5000,
+            salePriceMinor: 8000,
+            stockQuantity: 10,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    expect(
+      () => productService.deactivateProduct(
+        businessId: 'business-1',
+        productId: 'product-1',
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final product = await (database.select(database.products)
+          ..where((product) => product.id.equals('product-1')))
+        .getSingle();
+
+    expect(product.isActive, isTrue);
   });
 }
