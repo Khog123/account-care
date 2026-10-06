@@ -68,10 +68,44 @@ class PaymentService {
       );
     }
 
-    return _database.transaction(() async {
-      final now = DateTime.now();
+   return _database.transaction(() async {
+  final ledgerEntries = await (_database.select(_database.ledgerEntries)
+        ..where(
+          (entry) =>
+              entry.businessId.equals(businessId) &
+              entry.customerId.equals(customerId),
+        ))
+      .get();
 
-      await _database.into(_database.payments).insert(
+  var outstandingBalanceMinor = customer.openingBalanceMinor;
+
+  for (final entry in ledgerEntries) {
+    switch (entry.entryType) {
+      case 'sale_credit':
+        outstandingBalanceMinor += entry.amountMinor;
+        break;
+
+      case 'payment':
+        outstandingBalanceMinor -= entry.amountMinor;
+        break;
+    }
+  }
+
+  if (outstandingBalanceMinor <= 0) {
+    throw StateError(
+      'Customer has no outstanding balance.',
+    );
+  }
+
+  if (amountMinor > outstandingBalanceMinor) {
+    throw ArgumentError(
+      'Payment cannot exceed the customer outstanding balance.',
+    );
+  }
+
+  final now = DateTime.now();
+
+  await _database.into(_database.payments).insert(
             PaymentsCompanion.insert(
               id: paymentId,
               businessId: businessId,

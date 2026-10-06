@@ -47,6 +47,7 @@ void main() {
             id: 'customer-1',
             businessId: 'business-1',
             name: 'Test Customer',
+            openingBalanceMinor: Value(2000),
             createdAt: now,
             updatedAt: now,
           ),
@@ -342,6 +343,7 @@ void main() {
             id: 'customer-1',
             businessId: 'business-1',
             name: 'Test Customer',
+            openingBalanceMinor: Value(2000),
             createdAt: now,
             updatedAt: now,
           ),
@@ -384,3 +386,6 @@ void main() {
     expect(ledgerEntries, isEmpty);
   });
 }
+
+
+
