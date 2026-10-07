@@ -25,13 +25,10 @@ class CustomerLedgerService {
       );
     }
 
-    final entries = await (_database.select(_database.ledgerEntries)
-          ..where(
-            (entry) =>
-                entry.businessId.equals(businessId) &
-                entry.customerId.equals(customerId),
-          ))
-        .get();
+    final entries = await getLedgerEntries(
+      businessId: businessId,
+      customerId: customerId,
+    );
 
     var balanceMinor = customer.openingBalanceMinor;
 
@@ -48,5 +45,21 @@ class CustomerLedgerService {
     }
 
     return balanceMinor;
+  }
+
+  Future<List<LedgerEntry>> getLedgerEntries({
+    required String businessId,
+    required String customerId,
+  }) {
+    return (_database.select(_database.ledgerEntries)
+          ..where(
+            (entry) =>
+                entry.businessId.equals(businessId) &
+                entry.customerId.equals(customerId),
+          )
+          ..orderBy([
+            (entry) => OrderingTerm.desc(entry.entryAt),
+          ]))
+        .get();
   }
 }

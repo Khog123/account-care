@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/category_service.dart';
 import '../services/customer_service.dart';
+import '../services/customer_ledger_service.dart';
+import '../services/payment_service.dart';
 import '../services/dashboard_service.dart';
 import '../services/product_service.dart';
 import '../services/sale_services.dart';
@@ -43,3 +45,16 @@ final saleServiceProvider = Provider<SaleService>((ref) {
 
   return SaleService(database);
 });
+final customerLedgerServiceProvider =
+    Provider<CustomerLedgerService>((ref) {
+  final database = ref.watch(databaseProvider);
+
+  return CustomerLedgerService(database);
+});
+
+final paymentServiceProvider = Provider<PaymentService>((ref) {
+  final database = ref.watch(databaseProvider);
+
+  return PaymentService(database);
+});
+

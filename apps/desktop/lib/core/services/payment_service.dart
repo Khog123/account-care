@@ -14,6 +14,7 @@ class PaymentService {
     required String paymentId,
     required int amountMinor,
     required String paymentMethod,
+    String? reference,
     required DateTime paidAt,
   }) async {
     if (amountMinor <= 0) {
@@ -22,11 +23,15 @@ class PaymentService {
       );
     }
 
-    if (paymentMethod.trim().isEmpty) {
+    final trimmedPaymentMethod = paymentMethod.trim();
+
+    if (trimmedPaymentMethod.isEmpty) {
       throw ArgumentError(
         'Payment method cannot be empty.',
       );
     }
+
+    final trimmedReference = reference?.trim();
 
     final customer = await (_database.select(_database.customers)
           ..where(
@@ -68,51 +73,56 @@ class PaymentService {
       );
     }
 
-   return _database.transaction(() async {
-  final ledgerEntries = await (_database.select(_database.ledgerEntries)
-        ..where(
-          (entry) =>
-              entry.businessId.equals(businessId) &
-              entry.customerId.equals(customerId),
-        ))
-      .get();
+    return _database.transaction(() async {
+      final ledgerEntries = await (_database.select(_database.ledgerEntries)
+            ..where(
+              (entry) =>
+                  entry.businessId.equals(businessId) &
+                  entry.customerId.equals(customerId),
+            ))
+          .get();
 
-  var outstandingBalanceMinor = customer.openingBalanceMinor;
+      var outstandingBalanceMinor = customer.openingBalanceMinor;
 
-  for (final entry in ledgerEntries) {
-    switch (entry.entryType) {
-      case 'sale_credit':
-        outstandingBalanceMinor += entry.amountMinor;
-        break;
+      for (final entry in ledgerEntries) {
+        switch (entry.entryType) {
+          case 'sale_credit':
+            outstandingBalanceMinor += entry.amountMinor;
+            break;
 
-      case 'payment':
-        outstandingBalanceMinor -= entry.amountMinor;
-        break;
-    }
-  }
+          case 'payment':
+            outstandingBalanceMinor -= entry.amountMinor;
+            break;
+        }
+      }
 
-  if (outstandingBalanceMinor <= 0) {
-    throw StateError(
-      'Customer has no outstanding balance.',
-    );
-  }
+      if (outstandingBalanceMinor <= 0) {
+        throw StateError(
+          'Customer has no outstanding balance.',
+        );
+      }
 
-  if (amountMinor > outstandingBalanceMinor) {
-    throw ArgumentError(
-      'Payment cannot exceed the customer outstanding balance.',
-    );
-  }
+      if (amountMinor > outstandingBalanceMinor) {
+        throw ArgumentError(
+          'Payment cannot exceed the customer outstanding balance.',
+        );
+      }
 
-  final now = DateTime.now();
+      final now = DateTime.now();
 
-  await _database.into(_database.payments).insert(
+      await _database.into(_database.payments).insert(
             PaymentsCompanion.insert(
               id: paymentId,
               businessId: businessId,
               customerId: Value(customerId),
               userId: userId,
               amountMinor: amountMinor,
-              paymentMethod: paymentMethod,
+              paymentMethod: trimmedPaymentMethod,
+              reference: Value(
+                trimmedReference == null || trimmedReference.isEmpty
+                    ? null
+                    : trimmedReference,
+              ),
               paidAt: paidAt,
               createdAt: now,
             ),
