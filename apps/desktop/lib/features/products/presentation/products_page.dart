@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -64,6 +64,27 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
     if (saved == true && mounted) {
       ref.invalidate(productListProvider);
       ref.invalidate(archivedProductListProvider);
+    }
+  }
+
+    Future<void> _showAdjustStockDialog(Product product) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => StockAdjustmentDialog(
+        businessId: _currentBusinessId(),
+        product: product,
+      ),
+    );
+
+    if (saved == true && mounted) {
+      ref.invalidate(productListProvider);
+      ref.invalidate(archivedProductListProvider);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Stock updated for "${product.name}".'),
+        ),
+      );
     }
   }
 
@@ -366,10 +387,12 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
                     );
                   }
 
-                  return _ProductsTable(
+                    return _ProductsTable(
                     products: filteredProducts,
                     processingProductId: _processingProductId,
                     onEdit: _showArchived ? null : _showEditProductDialog,
+                    onAdjustStock:
+                    _showArchived ? null : _showAdjustStockDialog,
                     onDelete: _showArchived ? null : _archiveProduct,
                     onRestore: _showArchived ? _restoreProduct : null,
                   );
@@ -384,17 +407,19 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
 }
 
 class _ProductsTable extends StatelessWidget {
-  const _ProductsTable({
+    const _ProductsTable({
     required this.products,
     required this.processingProductId,
     required this.onEdit,
+    required this.onAdjustStock,
     required this.onDelete,
     required this.onRestore,
   });
 
   final List<Product> products;
   final String? processingProductId;
-  final ValueChanged<Product>? onEdit;
+  final ValueChanged<Product>? onEdit;  
+  final ValueChanged<Product>? onAdjustStock;
   final ValueChanged<Product>? onDelete;
   final ValueChanged<Product>? onRestore;
 
@@ -480,6 +505,15 @@ class _ProductsTable extends StatelessWidget {
                                   tooltip: 'Edit',
                                   onPressed: () => onEdit!(product),
                                   icon: const Icon(Icons.edit_outlined),
+                                ),
+                              if (onAdjustStock != null)
+                                IconButton(
+                                  tooltip: 'Adjust Stock',
+                                  onPressed: () =>
+                                      onAdjustStock!(product),
+                                  icon: const Icon(
+                                    Icons.inventory_rounded,
+                                  ),
                                 ),
                               if (onDelete != null)
                                 IconButton(
@@ -686,9 +720,9 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
           ? ''
           : _formatMinorInput(product.salePriceMinor),
     );
-    _stockController = TextEditingController(
-      text: product?.stockQuantity.toString() ?? '0',
-    );
+      _stockController = TextEditingController(
+        text: '0',
+      );
     _lowStockController = TextEditingController(
       text: product?.lowStockThreshold.toString() ?? '0',
     );
@@ -728,15 +762,13 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
 
     try {
       final productService = ref.read(productServiceProvider);
+      final inventoryService = ref.read(inventoryServiceProvider);
 
       final purchasePriceMinor = _parseMoneyToMinor(
         _purchasePriceController.text,
       );
       final salePriceMinor = _parseMoneyToMinor(
         _salePriceController.text,
-      );
-      final stockQuantity = int.parse(
-        _stockController.text.trim(),
       );
       final lowStockThreshold = int.parse(
         _lowStockController.text.trim(),
@@ -751,22 +783,36 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
           sku: _nullableText(_skuController.text),
           purchasePriceMinor: purchasePriceMinor,
           salePriceMinor: salePriceMinor,
-          stockQuantity: stockQuantity,
           lowStockThreshold: lowStockThreshold,
           isActive: true,
         );
       } else {
+        final productId = const Uuid().v4();
+
         await productService.createProduct(
           businessId: widget.businessId,
-          productId: const Uuid().v4(),
+          productId: productId,
           categoryId: categoryId,
           name: _nameController.text.trim(),
           sku: _nullableText(_skuController.text),
           purchasePriceMinor: purchasePriceMinor,
           salePriceMinor: salePriceMinor,
-          stockQuantity: stockQuantity,
           lowStockThreshold: lowStockThreshold,
         );
+
+        final openingStock = int.parse(
+          _stockController.text.trim(),
+        );
+
+        if (openingStock > 0) {
+          await inventoryService.addStock(
+            businessId: widget.businessId,
+            productId: productId,
+            quantity: openingStock,
+            movementType: 'initial_stock',
+            movementAt: DateTime.now(),
+          );
+        }
       }
 
       if (mounted) {
@@ -939,20 +985,24 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
+                                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _stockController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Opening stock',
-                          border: OutlineInputBorder(),
+                                       if (!_isEditing)
+                      Expanded(
+                        child: TextFormField(
+                          controller: _stockController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Opening stock',
+                            border: OutlineInputBorder(),
+                            helperText:
+                                'Recorded as initial inventory.',
+                          ),
+                          validator: _validateWholeNumber,
                         ),
-                        validator: _validateWholeNumber,
                       ),
-                    ),
-                    const SizedBox(width: 12),
+                    if (!_isEditing) const SizedBox(width: 12),
                     Expanded(
                       child: TextFormField(
                         controller: _lowStockController,
@@ -966,6 +1016,29 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                     ),
                   ],
                 ),
+                if (_isEditing) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Current stock',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(
+                        widget.product!.stockQuantity.toString(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Use Adjust Stock to change inventory quantity.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -997,6 +1070,216 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                   ),
                 )
               : Text(_isEditing ? 'Save Changes' : 'Add Product'),
+        ),
+      ],
+    );
+  }
+}
+
+class StockAdjustmentDialog extends ConsumerStatefulWidget {
+  const StockAdjustmentDialog({
+    super.key,
+    required this.businessId,
+    required this.product,
+  });
+
+  final String businessId;
+  final Product product;
+
+  @override
+  ConsumerState<StockAdjustmentDialog> createState() =>
+      _StockAdjustmentDialogState();
+}
+
+class _StockAdjustmentDialogState
+    extends ConsumerState<StockAdjustmentDialog> {
+  final _formKey = GlobalKey<FormState>();
+
+  late final TextEditingController _quantityController;
+  late final TextEditingController _referenceController;
+  late final TextEditingController _notesController;
+
+  bool _addStock = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _quantityController = TextEditingController();
+    _referenceController = TextEditingController();
+    _notesController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    _referenceController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+
+    try {
+      final inventoryService = ref.read(inventoryServiceProvider);
+
+      final quantity = int.parse(
+        _quantityController.text.trim(),
+      );
+
+      if (_addStock) {
+        await inventoryService.addStock(
+          businessId: widget.businessId,
+          productId: widget.product.id,
+          quantity: quantity,
+          movementType: 'stock_adjustment_add',
+          movementAt: DateTime.now(),
+          reference: _nullableText(_referenceController.text),
+          notes: _nullableText(_notesController.text),
+        );
+      } else {
+        await inventoryService.removeStock(
+          businessId: widget.businessId,
+          productId: widget.product.id,
+          quantity: quantity,
+          movementType: 'stock_adjustment_remove',
+          movementAt: DateTime.now(),
+          reference: _nullableText(_referenceController.text),
+          notes: _nullableText(_notesController.text),
+        );
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not adjust stock: $error'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: const Text('Adjust Stock'),
+      content: SizedBox(
+        width: 520,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.product.name,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Current stock: ${widget.product.stockQuantity}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 20),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment<bool>(
+                      value: true,
+                      icon: Icon(Icons.add),
+                      label: Text('Add Stock'),
+                    ),
+                    ButtonSegment<bool>(
+                      value: false,
+                      icon: Icon(Icons.remove),
+                      label: Text('Remove Stock'),
+                    ),
+                  ],
+                  selected: {_addStock},
+                  onSelectionChanged: _saving
+                      ? null
+                      : (selection) {
+                          setState(() {
+                            _addStock = selection.first;
+                          });
+                        },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _quantityController,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: _validatePositiveWholeNumber,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _referenceController,
+                  maxLength: 200,
+                  decoration: const InputDecoration(
+                    labelText: 'Reference (optional)',
+                    hintText: 'e.g. Purchase invoice #123',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextFormField(
+                  controller: _notesController,
+                  maxLength: 500,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving
+              ? null
+              : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                  ),
+                )
+              : Text(_addStock ? 'Add Stock' : 'Remove Stock'),
         ),
       ],
     );
@@ -1044,6 +1327,24 @@ String? _validateWholeNumber(String? value) {
   return null;
 }
 
+String? _validatePositiveWholeNumber(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'Required.';
+  }
+
+  final number = int.tryParse(value.trim());
+
+  if (number == null) {
+    return 'Enter a whole number.';
+  }
+
+  if (number <= 0) {
+    return 'Enter a quantity greater than zero.';
+  }
+
+  return null;
+}
+
 int _parseMoneyToMinor(String value) {
   final amount = double.parse(value.trim());
   return (amount * 100).round();
@@ -1060,3 +1361,4 @@ String _formatMoney(int amountMinor) {
   final decimal = (amountMinor % 100).abs().toString().padLeft(2, '0');
   return 'Rs. $major.$decimal';
 }
+

@@ -8,6 +8,7 @@ import '../services/dashboard_service.dart';
 import '../services/product_service.dart';
 import '../services/sale_services.dart';
 import '../services/user_service.dart';
+import '../services/inventory_service.dart';
 import 'database_provider.dart';
 
 final dashboardServiceProvider = Provider<DashboardService>((ref) {
@@ -32,6 +33,11 @@ final customerServiceProvider = Provider<CustomerService>((ref) {
   final database = ref.watch(databaseProvider);
 
   return CustomerService(database);
+});
+
+final inventoryServiceProvider = Provider<InventoryService>((ref) {
+  final database = ref.watch(databaseProvider);
+  return InventoryService(database);
 });
 
 final userServiceProvider = Provider<UserService>((ref) {

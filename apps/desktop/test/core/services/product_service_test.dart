@@ -47,7 +47,6 @@ void main() {
       sku: 'COLA-001',
       purchasePriceMinor: 5000,
       salePriceMinor: 8000,
-      stockQuantity: 20,
       lowStockThreshold: 5,
     );
 
@@ -63,7 +62,7 @@ void main() {
     expect(product.sku, 'COLA-001');
     expect(product.purchasePriceMinor, 5000);
     expect(product.salePriceMinor, 8000);
-    expect(product.stockQuantity, 20);
+    expect(product.stockQuantity, 0);
     expect(product.lowStockThreshold, 5);
     expect(product.isActive, isTrue);
   });
@@ -149,7 +148,7 @@ void main() {
         name: 'Juice',
         purchasePriceMinor: 5000,
         salePriceMinor: 8000,
-        stockQuantity: -1,
+lowStockThreshold: -1,
       ),
       throwsArgumentError,
     );
@@ -303,7 +302,6 @@ void main() {
       name: 'Updated Product',
       purchasePriceMinor: 6000,
       salePriceMinor: 9000,
-      stockQuantity: 10,
       lowStockThreshold: 5,
       sku: 'SKU-UPDATED',
       isActive: true,
@@ -375,7 +373,6 @@ void main() {
         name: 'Changed Product',
         purchasePriceMinor: 6000,
         salePriceMinor: 9000,
-        stockQuantity: 10,
         lowStockThreshold: 0,
         sku: 'CHANGED',
         isActive: true,
@@ -551,3 +548,5 @@ void main() {
     expect(product.isActive, isTrue);
   });
 }
+
+

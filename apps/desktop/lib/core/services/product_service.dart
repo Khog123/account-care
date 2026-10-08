@@ -14,7 +14,6 @@ class ProductService {
     required String name,
     required int purchasePriceMinor,
     required int salePriceMinor,
-    int stockQuantity = 0,
     int lowStockThreshold = 0,
     String? sku,
   }) async {
@@ -35,12 +34,6 @@ class ProductService {
     if (salePriceMinor < 0) {
       throw ArgumentError(
         'Sale price cannot be negative.',
-      );
-    }
-
-    if (stockQuantity < 0) {
-      throw ArgumentError(
-        'Stock quantity cannot be negative.',
       );
     }
 
@@ -87,7 +80,7 @@ class ProductService {
             sku: Value(sku),
             purchasePriceMinor: purchasePriceMinor,
             salePriceMinor: salePriceMinor,
-            stockQuantity: stockQuantity,
+            stockQuantity: 0,
             lowStockThreshold: Value(lowStockThreshold),
             createdAt: now,
             updatedAt: now,
@@ -142,7 +135,6 @@ class ProductService {
     required String name,
     required int purchasePriceMinor,
     required int salePriceMinor,
-    required int stockQuantity,
     required int lowStockThreshold,
     String? sku,
     required bool isActive,
@@ -164,12 +156,6 @@ class ProductService {
     if (salePriceMinor < 0) {
       throw ArgumentError(
         'Sale price cannot be negative.',
-      );
-    }
-
-    if (stockQuantity < 0) {
-      throw ArgumentError(
-        'Stock quantity cannot be negative.',
       );
     }
 
@@ -220,7 +206,6 @@ class ProductService {
         sku: Value(sku),
         purchasePriceMinor: Value(purchasePriceMinor),
         salePriceMinor: Value(salePriceMinor),
-        stockQuantity: Value(stockQuantity),
         lowStockThreshold: Value(lowStockThreshold),
         isActive: Value(isActive),
         updatedAt: Value(DateTime.now()),

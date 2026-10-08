@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/business_provider.dart';
 import '../../../core/providers/customer_provider.dart';
+import '../../../core/providers/dashboard_provider.dart';
 import '../../../core/providers/product_provider.dart';
 import '../../../core/providers/service_providers.dart';
 import '../../../core/services/sale_services.dart';
@@ -33,6 +34,10 @@ class _SalesPageState extends ConsumerState<SalesPage> {
   final _searchController = TextEditingController();
   final _discountController = TextEditingController(text: '0');
   final _paidController = TextEditingController(text: '0');
+  final _customerSearchController = TextEditingController();
+
+  String _paymentMethod = 'cash';
+  final _paymentReferenceController = TextEditingController();
 
   final List<_CartItem> _cart = [];
 
@@ -45,6 +50,8 @@ class _SalesPageState extends ConsumerState<SalesPage> {
     _searchController.dispose();
     _discountController.dispose();
     _paidController.dispose();
+    _customerSearchController.dispose();
+    _paymentReferenceController.dispose();
     super.dispose();
   }
 
@@ -240,6 +247,10 @@ class _SalesPageState extends ConsumerState<SalesPage> {
         customerId: _selectedCustomerId,
         discountMinor: _discountMinor,
         paidMinor: _paidMinor > _totalMinor ? _totalMinor : _paidMinor,
+        paymentMethod: _paymentMethod,
+        paymentReference: _paymentReferenceController.text.trim().isEmpty
+            ? null
+            : _paymentReferenceController.text.trim(),
         status: 'completed',
         soldAt: DateTime.now(),
         items: items,
@@ -254,10 +265,13 @@ class _SalesPageState extends ConsumerState<SalesPage> {
         _selectedCustomerId = null;
         _discountController.text = '0';
         _paidController.text = '0';
+        _paymentMethod = 'cash';
+        _paymentReferenceController.clear();
       });
 
       ref.invalidate(productListProvider);
       ref.invalidate(customerListProvider);
+      ref.invalidate(dashboardProvider);
 
       _showMessage('Sale completed successfully.');
     } catch (error) {
@@ -368,6 +382,8 @@ class _SalesPageState extends ConsumerState<SalesPage> {
               ],
             ),
             const SizedBox(height: 12),
+
+            // Cart area
             Expanded(
               child: _cart.isEmpty
                   ? const Center(child: Text('No products added yet.'))
@@ -435,112 +451,316 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                       },
                     ),
             ),
-            const Divider(),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String?>(
-              initialValue: _selectedCustomerId,
-              decoration: const InputDecoration(
-                labelText: 'Customer',
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('Walk-in / No customer'),
+
+            // Payment and customer area
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_dueMinor > 0) ...[
+                      const Divider(),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Customer Required',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'This sale has an outstanding balance. '
+                        'Select an existing customer or add a new one.',
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _customerSearchController,
+                        onChanged: (_) {
+                          setState(() {});
+                        },
+                        decoration: InputDecoration(
+                          labelText: 'Search customer',
+                          hintText: 'Search by name or phone',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _customerSearchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    setState(() {
+                                      _customerSearchController.clear();
+                                    });
+                                  },
+                                  icon: const Icon(Icons.clear),
+                                ),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      if (_selectedCustomerId != null)
+                        Builder(
+                          builder: (context) {
+                            Customer? selectedCustomer;
+
+                            for (final customer in customers) {
+                              if (customer.id == _selectedCustomerId) {
+                                selectedCustomer = customer;
+                                break;
+                              }
+                            }
+
+                            if (selectedCustomer == null) {
+                              return const SizedBox.shrink();
+                            }
+
+                            return Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.person),
+                                title: Text(selectedCustomer.name),
+                                subtitle: selectedCustomer.phone == null
+                                    ? null
+                                    : Text(selectedCustomer.phone!),
+                                trailing: IconButton(
+                                  tooltip: 'Change customer',
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedCustomerId = null;
+                                      _customerSearchController.clear();
+                                    });
+                                  },
+                                  icon: const Icon(Icons.close),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                      Builder(
+                        builder: (context) {
+                          final query = _customerSearchController.text
+                              .trim()
+                              .toLowerCase();
+
+                          if (query.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                'Start typing to search for a customer.',
+                              ),
+                            );
+                          }
+
+                          final matches = customers
+                              .where((customer) {
+                                final name = customer.name.toLowerCase();
+                                final phone =
+                                    customer.phone?.toLowerCase() ?? '';
+
+                                return name.contains(query) ||
+                                    phone.contains(query);
+                              })
+                              .take(5)
+                              .toList();
+
+                          if (matches.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: Text('No matching customer found.'),
+                            );
+                          }
+
+                          return Column(
+                            children: matches.map((customer) {
+                              return ListTile(
+                                leading: const Icon(Icons.person_outline),
+                                title: Text(customer.name),
+                                subtitle: customer.phone == null
+                                    ? null
+                                    : Text(customer.phone!),
+                                onTap: () {
+                                  setState(() {
+                                    _selectedCustomerId = customer.id;
+                                    _customerSearchController.clear();
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final customerId = await _showAddCustomerDialog();
+
+                          if (customerId == null || !mounted) {
+                            return;
+                          }
+
+                          setState(() {
+                            _selectedCustomerId = customerId;
+                            _customerSearchController.clear();
+                          });
+                        },
+                        icon: const Icon(Icons.person_add),
+                        label: const Text('Add New Customer'),
+                      ),
+                    ],
+
+                    const SizedBox(height: 12),
+
+                    // Discount
+                    TextField(
+                      controller: _discountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        TextInputFormatter.withFunction((oldValue, newValue) {
+                          final text = newValue.text;
+
+                          if (text.isEmpty ||
+                              RegExp(r'^\d*\.?\d{0,2}$').hasMatch(text)) {
+                            return newValue;
+                          }
+
+                          return oldValue;
+                        }),
+                      ],
+                      onChanged: (_) {
+                        setState(() {});
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Discount (PKR)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Paid
+                    TextField(
+                      controller: _paidController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        TextInputFormatter.withFunction((oldValue, newValue) {
+                          final text = newValue.text;
+
+                          if (text.isEmpty ||
+                              RegExp(r'^\d*\.?\d{0,2}$').hasMatch(text)) {
+                            return newValue;
+                          }
+
+                          return oldValue;
+                        }),
+                      ],
+                      onChanged: (_) {
+                        setState(() {});
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Paid (PKR)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Payment method
+                    DropdownButtonFormField<String>(
+                      initialValue: _paymentMethod,
+                      decoration: const InputDecoration(
+                        labelText: 'Payment Method',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                        DropdownMenuItem(
+                          value: 'bank_transfer',
+                          child: Text('Bank Transfer'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'easypaisa',
+                          child: Text('Easypaisa'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'jazzcash',
+                          child: Text('JazzCash'),
+                        ),
+                        DropdownMenuItem(value: 'other', child: Text('Other')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+
+                        setState(() {
+                          _paymentMethod = value;
+
+                          if (value == 'cash') {
+                            _paymentReferenceController.clear();
+                          }
+                        });
+                      },
+                    ),
+
+                    if (_paymentMethod != 'cash') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _paymentReferenceController,
+                        textInputAction: TextInputAction.done,
+                        decoration: const InputDecoration(
+                          labelText: 'Payment Reference',
+                          hintText: 'Optional transaction/reference number',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+
+                    // Summary
+                    _summaryRow('Subtotal', _formatMoney(_subtotalMinor)),
+                    const SizedBox(height: 6),
+                    _summaryRow('Discount', _formatMoney(_discountMinor)),
+                    const SizedBox(height: 6),
+                    _summaryRow('Total', _formatMoney(_totalMinor), bold: true),
+                    const SizedBox(height: 6),
+                    _summaryRow('Paid', _formatMoney(_paidMinor)),
+                    const SizedBox(height: 6),
+                    _summaryRow(
+                      _changeMinor > 0 ? 'Change to return' : 'Due',
+                      _formatMoney(_changeMinor > 0 ? _changeMinor : _dueMinor),
+                      bold: true,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Complete sale
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _isSaving ? null : _completeSale,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.point_of_sale),
+                        label: Text(
+                          _isSaving ? 'Completing Sale...' : 'Complete Sale',
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+                  ],
                 ),
-                ...customers.map(
-                  (customer) => DropdownMenuItem<String?>(
-                    value: customer.id,
-                    child: Text(customer.name),
-                  ),
-                ),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _selectedCustomerId = value;
-                });
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _discountController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                TextInputFormatter.withFunction((oldValue, newValue) {
-                  final text = newValue.text;
-
-                  if (text.isEmpty ||
-                      RegExp(r'^\d*\.?\d{0,2}$').hasMatch(text)) {
-                    return newValue;
-                  }
-
-                  return oldValue;
-                }),
-              ],
-              onChanged: (_) {
-                setState(() {});
-              },
-              decoration: const InputDecoration(
-                labelText: 'Discount (PKR)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _paidController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                TextInputFormatter.withFunction((oldValue, newValue) {
-                  final text = newValue.text;
-
-                  if (text.isEmpty ||
-                      RegExp(r'^\d*\.?\d{0,2}$').hasMatch(text)) {
-                    return newValue;
-                  }
-
-                  return oldValue;
-                }),
-              ],
-              onChanged: (_) {
-                setState(() {});
-              },
-              decoration: const InputDecoration(
-                labelText: 'Paid (PKR)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _summaryRow('Subtotal', _formatMoney(_subtotalMinor)),
-            const SizedBox(height: 6),
-            _summaryRow('Discount', _formatMoney(_discountMinor)),
-            const SizedBox(height: 6),
-            _summaryRow('Total', _formatMoney(_totalMinor), bold: true),
-            const SizedBox(height: 6),
-            _summaryRow('Paid', _formatMoney(_paidMinor)),
-            const SizedBox(height: 6),
-
-            _summaryRow(
-              _changeMinor > 0 ? 'Change to return' : 'Due',
-              _formatMoney(_changeMinor > 0 ? _changeMinor : _dueMinor),
-              bold: true,
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _isSaving ? null : _completeSale,
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.point_of_sale),
-                label: Text(_isSaving ? 'Completing Sale...' : 'Complete Sale'),
               ),
             ),
           ],
@@ -561,6 +781,161 @@ class _SalesPageState extends ConsumerState<SalesPage> {
         Text(value, style: style),
       ],
     );
+  }
+
+  Future<String?> _showAddCustomerDialog() async {
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final addressController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          bool isSaving = false;
+
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Text('Add New Customer'),
+                content: SizedBox(
+                  width: 420,
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextFormField(
+                          controller: nameController,
+                          autofocus: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Customer name',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Customer name is required.';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: phoneController,
+                          decoration: const InputDecoration(
+                            labelText: 'Phone',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: addressController,
+                          decoration: const InputDecoration(
+                            labelText: 'Address',
+                            border: OutlineInputBorder(),
+                          ),
+                          maxLines: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: isSaving
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            if (!formKey.currentState!.validate()) {
+                              return;
+                            }
+
+                            final businessId = ref.read(
+                              activeBusinessIdProvider,
+                            );
+
+                            if (businessId == null || businessId.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('No active business selected.'),
+                                ),
+                              );
+                              return;
+                            }
+
+                            setDialogState(() {
+                              isSaving = true;
+                            });
+
+                            try {
+                              final customerId =
+                                  'customer-${DateTime.now().microsecondsSinceEpoch}';
+
+                              final customerService = ref.read(
+                                customerServiceProvider,
+                              );
+
+                              await customerService.createCustomer(
+                                businessId: businessId,
+                                customerId: customerId,
+                                name: nameController.text,
+                                phone: phoneController.text.trim().isEmpty
+                                    ? null
+                                    : phoneController.text.trim(),
+                                address: addressController.text.trim().isEmpty
+                                    ? null
+                                    : addressController.text.trim(),
+                              );
+
+                              ref.invalidate(customerListProvider);
+
+                              if (dialogContext.mounted) {
+                                Navigator.of(dialogContext).pop(customerId);
+                              }
+                            } catch (error) {
+                              if (dialogContext.mounted) {
+                                setDialogState(() {
+                                  isSaving = false;
+                                });
+
+                                ScaffoldMessenger.of(dialogContext)
+                                    .showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Could not add customer: $error',
+                                        ),
+                                      ),
+                                    );
+                              }
+                            }
+                          },
+                    child: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Add Customer'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameController.dispose();
+        phoneController.dispose();
+        addressController.dispose();
+      });
+    }
   }
 
   @override
