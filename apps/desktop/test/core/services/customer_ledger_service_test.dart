@@ -17,11 +17,12 @@ void main() {
     await database.close();
   });
 
-  test('calculates customer outstanding balance from ledger entries',
-      () async {
+  test('calculates customer outstanding balance from ledger entries', () async {
     final now = DateTime.now();
 
-    await database.into(database.businesses).insert(
+    await database
+        .into(database.businesses)
+        .insert(
           BusinessesCompanion.insert(
             id: 'business-1',
             name: 'Test Business',
@@ -30,17 +31,22 @@ void main() {
           ),
         );
 
-    await database.into(database.customers).insert(
+    await database
+        .into(database.customers)
+        .insert(
           CustomersCompanion.insert(
             id: 'customer-1',
             businessId: 'business-1',
             name: 'Test Customer',
+            openingBalanceMinor: const Value(1000),
             createdAt: now,
             updatedAt: now,
           ),
         );
 
-    await database.into(database.ledgerEntries).insert(
+    await database
+        .into(database.ledgerEntries)
+        .insert(
           LedgerEntriesCompanion.insert(
             id: 'ledger-1',
             businessId: 'business-1',
@@ -53,7 +59,9 @@ void main() {
           ),
         );
 
-    await database.into(database.ledgerEntries).insert(
+    await database
+        .into(database.ledgerEntries)
+        .insert(
           LedgerEntriesCompanion.insert(
             id: 'ledger-2',
             businessId: 'business-1',
@@ -71,13 +79,15 @@ void main() {
       customerId: 'customer-1',
     );
 
-    expect(balance, 1500);
+    expect(balance, 2500);
   });
 
   test('returns zero when customer has no ledger entries', () async {
     final now = DateTime.now();
 
-    await database.into(database.businesses).insert(
+    await database
+        .into(database.businesses)
+        .insert(
           BusinessesCompanion.insert(
             id: 'business-1',
             name: 'Test Business',
@@ -86,7 +96,9 @@ void main() {
           ),
         );
 
-    await database.into(database.customers).insert(
+    await database
+        .into(database.customers)
+        .insert(
           CustomersCompanion.insert(
             id: 'customer-1',
             businessId: 'business-1',
@@ -104,11 +116,12 @@ void main() {
     expect(balance, 0);
   });
 
-  test('does not include another business customer ledger entries',
-      () async {
+  test('does not include another business customer ledger entries', () async {
     final now = DateTime.now();
 
-    await database.into(database.businesses).insert(
+    await database
+        .into(database.businesses)
+        .insert(
           BusinessesCompanion.insert(
             id: 'business-1',
             name: 'Business One',
@@ -117,7 +130,9 @@ void main() {
           ),
         );
 
-    await database.into(database.businesses).insert(
+    await database
+        .into(database.businesses)
+        .insert(
           BusinessesCompanion.insert(
             id: 'business-2',
             name: 'Business Two',
@@ -126,7 +141,9 @@ void main() {
           ),
         );
 
-    await database.into(database.customers).insert(
+    await database
+        .into(database.customers)
+        .insert(
           CustomersCompanion.insert(
             id: 'customer-1',
             businessId: 'business-1',
@@ -136,7 +153,9 @@ void main() {
           ),
         );
 
-    await database.into(database.customers).insert(
+    await database
+        .into(database.customers)
+        .insert(
           CustomersCompanion.insert(
             id: 'customer-2',
             businessId: 'business-2',
@@ -146,7 +165,9 @@ void main() {
           ),
         );
 
-    await database.into(database.ledgerEntries).insert(
+    await database
+        .into(database.ledgerEntries)
+        .insert(
           LedgerEntriesCompanion.insert(
             id: 'ledger-1',
             businessId: 'business-1',
@@ -158,7 +179,9 @@ void main() {
           ),
         );
 
-    await database.into(database.ledgerEntries).insert(
+    await database
+        .into(database.ledgerEntries)
+        .insert(
           LedgerEntriesCompanion.insert(
             id: 'ledger-2',
             businessId: 'business-2',
@@ -181,7 +204,9 @@ void main() {
   test('payment entries reduce the outstanding balance', () async {
     final now = DateTime.now();
 
-    await database.into(database.businesses).insert(
+    await database
+        .into(database.businesses)
+        .insert(
           BusinessesCompanion.insert(
             id: 'business-1',
             name: 'Test Business',
@@ -190,7 +215,9 @@ void main() {
           ),
         );
 
-    await database.into(database.customers).insert(
+    await database
+        .into(database.customers)
+        .insert(
           CustomersCompanion.insert(
             id: 'customer-1',
             businessId: 'business-1',
@@ -200,7 +227,9 @@ void main() {
           ),
         );
 
-    await database.into(database.ledgerEntries).insert(
+    await database
+        .into(database.ledgerEntries)
+        .insert(
           LedgerEntriesCompanion.insert(
             id: 'ledger-1',
             businessId: 'business-1',
@@ -212,7 +241,9 @@ void main() {
           ),
         );
 
-    await database.into(database.ledgerEntries).insert(
+    await database
+        .into(database.ledgerEntries)
+        .insert(
           LedgerEntriesCompanion.insert(
             id: 'ledger-2',
             businessId: 'business-1',
@@ -224,7 +255,9 @@ void main() {
           ),
         );
 
-    await database.into(database.ledgerEntries).insert(
+    await database
+        .into(database.ledgerEntries)
+        .insert(
           LedgerEntriesCompanion.insert(
             id: 'ledger-3',
             businessId: 'business-1',

@@ -75,6 +75,12 @@ class PaymentService {
         throw StateError('User is inactive: ${user.name}');
       }
 
+      // Reconcile historical payments before calculating the balance.
+      await _allocateLegacyPayments(
+        businessId: businessId,
+        customerId: customerId,
+      );
+
       // Calculate the customer's balance using the ledger, not just
       // the sum of invoice dues. This preserves opening-balance support.
       final ledgerEntries =
@@ -107,14 +113,6 @@ class PaymentService {
           'Payment cannot exceed the customer outstanding balance.',
         );
       }
-
-      // Repair allocations for older customer payments recorded before
-      // invoice allocation was introduced. A historical payment can only
-      // be allocated to invoices sold on or before its payment date.
-      await _allocateLegacyPayments(
-        businessId: businessId,
-        customerId: customerId,
-      );
 
       final now = DateTime.now();
 
@@ -215,7 +213,7 @@ class PaymentService {
             );
       }
 
-      // Do not allocate the same legacy payment twice.
+      // Allocate only the amount that has not already been allocated.
       final existingAllocations =
           await (_database.select(_database.paymentAllocations)..where(
                 (allocation) =>
@@ -224,7 +222,22 @@ class PaymentService {
               ))
               .get();
 
-      if (existingAllocations.isNotEmpty) {
+      final alreadyAllocatedMinor = existingAllocations.fold<int>(
+        0,
+        (total, allocation) => total + allocation.amountMinor,
+      );
+
+      if (alreadyAllocatedMinor > payment.amountMinor) {
+        throw StateError(
+          'Legacy payment ${payment.id} has allocations '
+          '($alreadyAllocatedMinor) exceeding its amount '
+          '(${payment.amountMinor}).',
+        );
+      }
+
+      final remainingMinor = payment.amountMinor - alreadyAllocatedMinor;
+
+      if (remainingMinor == 0) {
         continue;
       }
 
@@ -232,7 +245,7 @@ class PaymentService {
         businessId: businessId,
         customerId: customerId,
         paymentId: payment.id,
-        amountMinor: payment.amountMinor,
+        amountMinor: remainingMinor,
         paidAt: payment.paidAt,
         createdAt: payment.createdAt,
       );

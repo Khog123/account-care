@@ -1,8 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:drift/drift.dart' show OrderingTerm, Value;
+import 'package:drift/drift.dart' hide isNull;
 
 import 'package:desktop/core/database/app_database.dart';
 import 'package:desktop/core/services/payment_service.dart';
+import 'package:desktop/core/services/customer_ledger_service.dart';
 
 void main() {
   late AppDatabase database;
@@ -721,11 +722,25 @@ void main() {
             subtotalMinor: 100000,
             discountMinor: const Value(0),
             totalMinor: 100000,
-            paidMinor: const Value(0),
-            dueMinor: const Value(100000),
+            paidMinor: const Value(20000),
+            dueMinor: const Value(80000),
             status: 'completed',
             soldAt: invoiceDate,
             createdAt: invoiceDate,
+          ),
+        );
+
+    await database
+        .into(database.paymentAllocations)
+        .insert(
+          PaymentAllocationsCompanion.insert(
+            id: 'legacy-partial-allocation',
+            businessId: 'legacy-business',
+            paymentId: 'legacy-payment',
+            saleId: 'legacy-sale',
+            amountMinor: 20000,
+            allocatedAt: legacyPaymentDate,
+            createdAt: legacyPaymentDate,
           ),
         );
 
@@ -794,17 +809,6 @@ void main() {
 
     // Both the legacy payment and the new payment should be represented once.
     expect(paymentLedgerEntries, hasLength(2));
-
-    expect(
-      paymentLedgerEntries.fold<int>(
-        0,
-        (total, entry) => total + entry.amountMinor,
-      ),
-      100000,
-    );
-
-    // Both the legacy payment and the new payment should be represented once.
-    expect(paymentLedgerEntries, hasLength(2));
     expect(
       paymentLedgerEntries.fold<int>(
         0,
@@ -813,6 +817,238 @@ void main() {
       100000,
     );
   });
+
+  test(
+    'repairs a legacy payment against opening balance without invoices',
+    () async {
+      final now = DateTime.now();
+      final legacyPaymentDate = now.subtract(const Duration(days: 1));
+
+      await database
+          .into(database.businesses)
+          .insert(
+            BusinessesCompanion.insert(
+              id: 'opening-business',
+              name: 'Opening Balance Test Business',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.users)
+          .insert(
+            UsersCompanion.insert(
+              id: 'opening-user',
+              businessId: 'opening-business',
+              name: 'Opening Balance Test User',
+              username: 'opening-user',
+              passwordHash: 'test-hash',
+              role: 'master_merchant',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.customers)
+          .insert(
+            CustomersCompanion.insert(
+              id: 'opening-customer',
+              businessId: 'opening-business',
+              name: 'Opening Balance Customer',
+              openingBalanceMinor: const Value(100000),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      // A historical payment exists, but has no ledger entry or invoice.
+      await database
+          .into(database.payments)
+          .insert(
+            PaymentsCompanion.insert(
+              id: 'opening-legacy-payment',
+              businessId: 'opening-business',
+              customerId: const Value('opening-customer'),
+              userId: 'opening-user',
+              amountMinor: 30000,
+              paymentMethod: 'cash',
+              paidAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      // Repair the legacy payment and record a new payment.
+      await paymentService.recordPayment(
+        businessId: 'opening-business',
+        customerId: 'opening-customer',
+        userId: 'opening-user',
+        paymentId: 'opening-new-payment',
+        amountMinor: 10000,
+        paymentMethod: 'cash',
+        paidAt: now,
+      );
+
+      final paymentEntries =
+          await (database.select(database.ledgerEntries)..where(
+                (entry) =>
+                    entry.businessId.equals('opening-business') &
+                    entry.customerId.equals('opening-customer') &
+                    entry.entryType.equals('payment'),
+              ))
+              .get();
+
+      expect(paymentEntries, hasLength(2));
+      expect(
+        paymentEntries.fold<int>(
+          0,
+          (total, entry) => total + entry.amountMinor,
+        ),
+        40000,
+      );
+
+      final allocations =
+          await (database.select(database.paymentAllocations)..where(
+                (allocation) =>
+                    allocation.businessId.equals('opening-business'),
+              ))
+              .get();
+
+      expect(allocations, isEmpty);
+
+      final customerLedgerService = CustomerLedgerService(database);
+
+      final outstandingMinor = await customerLedgerService
+          .getOutstandingBalance(
+            businessId: 'opening-business',
+            customerId: 'opening-customer',
+          );
+
+      expect(outstandingMinor, 60000);
+    },
+  );
+
+  test(
+    'rejects a legacy payment with allocations exceeding its amount',
+    () async {
+      final now = DateTime.now();
+      final legacyPaymentDate = now.subtract(const Duration(days: 1));
+
+      await database
+          .into(database.businesses)
+          .insert(
+            BusinessesCompanion.insert(
+              id: 'overallocated-business',
+              name: 'Overallocated Test Business',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.users)
+          .insert(
+            UsersCompanion.insert(
+              id: 'overallocated-user',
+              businessId: 'overallocated-business',
+              name: 'Overallocated Test User',
+              username: 'overallocated-user',
+              passwordHash: 'test-hash',
+              role: 'master_merchant',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.customers)
+          .insert(
+            CustomersCompanion.insert(
+              id: 'overallocated-customer',
+              businessId: 'overallocated-business',
+              name: 'Overallocated Customer',
+              openingBalanceMinor: const Value(100000),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.payments)
+          .insert(
+            PaymentsCompanion.insert(
+              id: 'overallocated-legacy-payment',
+              businessId: 'overallocated-business',
+              customerId: const Value('overallocated-customer'),
+              userId: 'overallocated-user',
+              amountMinor: 30000,
+              paymentMethod: 'cash',
+              paidAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      await database
+          .into(database.paymentAllocations)
+          .insert(
+            PaymentAllocationsCompanion.insert(
+              id: 'overallocated-allocation-1',
+              businessId: 'overallocated-business',
+              paymentId: 'overallocated-legacy-payment',
+              saleId: 'legacy-sale-1',
+              amountMinor: 20000,
+              allocatedAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      await database
+          .into(database.paymentAllocations)
+          .insert(
+            PaymentAllocationsCompanion.insert(
+              id: 'overallocated-allocation-2',
+              businessId: 'overallocated-business',
+              paymentId: 'overallocated-legacy-payment',
+              saleId: 'legacy-sale-2',
+              amountMinor: 20000,
+              allocatedAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      await expectLater(
+        paymentService.recordPayment(
+          businessId: 'overallocated-business',
+          customerId: 'overallocated-customer',
+          userId: 'overallocated-user',
+          paymentId: 'should-not-be-inserted',
+          amountMinor: 10000,
+          paymentMethod: 'cash',
+          paidAt: now,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final attemptedPayment =
+          await (database.select(database.payments)..where(
+                (payment) => payment.id.equals('should-not-be-inserted'),
+              ))
+              .getSingleOrNull();
+
+      expect(attemptedPayment, isNull);
+
+      final legacyLedgerEntries =
+          await (database.select(database.ledgerEntries)..where(
+                (entry) =>
+                    entry.businessId.equals('overallocated-business') &
+                    entry.paymentId.equals('overallocated-legacy-payment'),
+              ))
+              .get();
+
+      expect(legacyLedgerEntries, isEmpty);
+    },
+  );
 
   test('allocates a payment to the oldest invoices first', () async {
     final now = DateTime.now();
