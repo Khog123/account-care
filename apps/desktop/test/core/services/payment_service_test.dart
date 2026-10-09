@@ -339,7 +339,6 @@ void main() {
     expect(ledgerEntries, isEmpty);
   });
 
-
   test('rolls back when payment ID already exists', () async {
     final now = DateTime.now();
     final invoiceDate = now.subtract(const Duration(days: 2));
@@ -666,6 +665,155 @@ void main() {
     },
   );
 
+  test('repairs the ledger entry for a legacy payment exactly once', () async {
+    final now = DateTime.now();
+    final invoiceDate = now.subtract(const Duration(days: 2));
+    final legacyPaymentDate = now.subtract(const Duration(days: 1));
+
+    await database
+        .into(database.businesses)
+        .insert(
+          BusinessesCompanion.insert(
+            id: 'legacy-business',
+            name: 'Legacy Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database
+        .into(database.users)
+        .insert(
+          UsersCompanion.insert(
+            id: 'legacy-user',
+            businessId: 'legacy-business',
+            name: 'Legacy Test User',
+            username: 'legacy-user',
+            passwordHash: 'test-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database
+        .into(database.customers)
+        .insert(
+          CustomersCompanion.insert(
+            id: 'legacy-customer',
+            businessId: 'legacy-business',
+            name: 'Legacy Customer',
+            openingBalanceMinor: const Value(100000),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await database
+        .into(database.sales)
+        .insert(
+          SalesCompanion.insert(
+            id: 'legacy-sale',
+            businessId: 'legacy-business',
+            customerId: const Value('legacy-customer'),
+            userId: 'legacy-user',
+            invoiceNumber: 'LEGACY-001',
+            subtotalMinor: 100000,
+            discountMinor: const Value(0),
+            totalMinor: 100000,
+            paidMinor: const Value(0),
+            dueMinor: const Value(100000),
+            status: 'completed',
+            soldAt: invoiceDate,
+            createdAt: invoiceDate,
+          ),
+        );
+
+    await database
+        .into(database.ledgerEntries)
+        .insert(
+          LedgerEntriesCompanion.insert(
+            id: 'legacy-sale-credit',
+            businessId: 'legacy-business',
+            customerId: 'legacy-customer',
+            saleId: const Value('legacy-sale'),
+            entryType: 'sale_credit',
+            amountMinor: 100000,
+            description: const Value('Legacy invoice credit'),
+            entryAt: invoiceDate,
+            createdAt: invoiceDate,
+          ),
+        );
+
+    // Historical payment exists, but has no allocation or payment ledger entry.
+    await database
+        .into(database.payments)
+        .insert(
+          PaymentsCompanion.insert(
+            id: 'legacy-payment',
+            businessId: 'legacy-business',
+            customerId: const Value('legacy-customer'),
+            userId: 'legacy-user',
+            amountMinor: 50000,
+            paymentMethod: 'cash',
+            paidAt: legacyPaymentDate,
+            createdAt: legacyPaymentDate,
+          ),
+        );
+
+    // Recording another payment triggers the legacy-allocation repair.
+    await paymentService.recordPayment(
+      businessId: 'legacy-business',
+      customerId: 'legacy-customer',
+      userId: 'legacy-user',
+      paymentId: 'new-payment',
+      amountMinor: 50000,
+      paymentMethod: 'cash',
+      paidAt: now,
+    );
+
+    final invoice = await (database.select(
+      database.sales,
+    )..where((sale) => sale.id.equals('legacy-sale'))).getSingle();
+
+    expect(invoice.paidMinor, 100000);
+    expect(invoice.dueMinor, 0);
+
+    final allLedgerEntries = await database
+        .select(database.ledgerEntries)
+        .get();
+
+    final paymentLedgerEntries = allLedgerEntries
+        .where(
+          (entry) =>
+              entry.businessId == 'legacy-business' &&
+              entry.customerId == 'legacy-customer' &&
+              entry.entryType == 'payment',
+        )
+        .toList();
+
+    // Both the legacy payment and the new payment should be represented once.
+    expect(paymentLedgerEntries, hasLength(2));
+
+    expect(
+      paymentLedgerEntries.fold<int>(
+        0,
+        (total, entry) => total + entry.amountMinor,
+      ),
+      100000,
+    );
+
+    // Both the legacy payment and the new payment should be represented once.
+    expect(paymentLedgerEntries, hasLength(2));
+    expect(
+      paymentLedgerEntries.fold<int>(
+        0,
+        (total, entry) => total + entry.amountMinor,
+      ),
+      100000,
+    );
+  });
+
   test('allocates a payment to the oldest invoices first', () async {
     final now = DateTime.now();
     final firstSaleDate = now.subtract(const Duration(days: 3));
@@ -830,18 +978,13 @@ void main() {
     expect(paymentRows, hasLength(1));
     expect(paymentRows.single.amountMinor, 220000);
 
-
-    final allPaymentLedgerEntries =
-        await (database.select(database.ledgerEntries)
-              ..where(
-                (entry) => entry.paymentId.equals('fifo-payment-1'),
-              ))
-            .get();
+    final allPaymentLedgerEntries = await (database.select(
+      database.ledgerEntries,
+    )..where((entry) => entry.paymentId.equals('fifo-payment-1'))).get();
 
     final paymentLedgerEntries = allPaymentLedgerEntries
         .where((entry) => entry.entryType == 'payment')
         .toList();
-
 
     expect(paymentLedgerEntries, hasLength(1));
     expect(paymentLedgerEntries.single.amountMinor, 220000);

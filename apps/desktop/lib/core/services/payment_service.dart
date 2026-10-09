@@ -185,6 +185,37 @@ class PaymentService {
             .get();
 
     for (final payment in legacyPayments) {
+      // Repair a missing payment ledger entry without duplicating one.
+      final existingPaymentLedgerEntries =
+          await (_database.select(_database.ledgerEntries)..where(
+                (entry) =>
+                    entry.businessId.equals(businessId) &
+                    entry.customerId.equals(customerId) &
+                    entry.paymentId.equals(payment.id) &
+                    entry.entryType.equals('payment'),
+              ))
+              .get();
+
+      if (existingPaymentLedgerEntries.isEmpty) {
+        await _database
+            .into(_database.ledgerEntries)
+            .insert(
+              LedgerEntriesCompanion.insert(
+                id: _generateId(),
+                businessId: businessId,
+                customerId: customerId,
+                saleId: const Value(null),
+                paymentId: Value(payment.id),
+                entryType: 'payment',
+                amountMinor: payment.amountMinor,
+                description: const Value('Customer payment'),
+                entryAt: payment.paidAt,
+                createdAt: payment.createdAt,
+              ),
+            );
+      }
+
+      // Do not allocate the same legacy payment twice.
       final existingAllocations =
           await (_database.select(_database.paymentAllocations)..where(
                 (allocation) =>
@@ -203,7 +234,7 @@ class PaymentService {
         paymentId: payment.id,
         amountMinor: payment.amountMinor,
         paidAt: payment.paidAt,
-        createdAt: DateTime.now(),
+        createdAt: payment.createdAt,
       );
     }
   }
