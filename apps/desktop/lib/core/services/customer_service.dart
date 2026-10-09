@@ -18,32 +18,26 @@ class CustomerService {
     final trimmedName = name.trim();
 
     if (trimmedName.isEmpty) {
-      throw ArgumentError(
-        'Customer name cannot be empty.',
-      );
+      throw ArgumentError('Customer name cannot be empty.');
     }
 
     if (openingBalanceMinor < 0) {
-      throw ArgumentError(
-        'Opening balance cannot be negative.',
-      );
+      throw ArgumentError('Opening balance cannot be negative.');
     }
 
-    final business = await (_database.select(_database.businesses)
-          ..where(
-            (business) => business.id.equals(businessId),
-          ))
-        .getSingleOrNull();
+    final business = await (_database.select(
+      _database.businesses,
+    )..where((business) => business.id.equals(businessId))).getSingleOrNull();
 
     if (business == null) {
-      throw StateError(
-        'Business not found: $businessId',
-      );
+      throw StateError('Business not found: $businessId');
     }
 
     final now = DateTime.now();
 
-    await _database.into(_database.customers).insert(
+    await _database
+        .into(_database.customers)
+        .insert(
           CustomersCompanion.insert(
             id: customerId,
             businessId: businessId,
@@ -64,21 +58,15 @@ class CustomerService {
     bool activeOnly = false,
   }) {
     final query = _database.select(_database.customers)
-      ..where(
-        (customer) => customer.businessId.equals(businessId),
-      );
+      ..where((customer) => customer.businessId.equals(businessId));
 
     if (activeOnly) {
-      query.where(
-        (customer) => customer.isActive.equals(true),
-      );
+      query.where((customer) => customer.isActive.equals(true));
     }
 
     query.orderBy([
-      (customer) => OrderingTerm(
-            expression: customer.name,
-            mode: OrderingMode.asc,
-          ),
+      (customer) =>
+          OrderingTerm(expression: customer.name, mode: OrderingMode.asc),
     ]);
 
     return query.get();
@@ -88,12 +76,11 @@ class CustomerService {
     required String businessId,
     required String customerId,
   }) {
-    return (_database.select(_database.customers)
-          ..where(
-            (customer) =>
-                customer.id.equals(customerId) &
-                customer.businessId.equals(businessId),
-          ))
+    return (_database.select(_database.customers)..where(
+          (customer) =>
+              customer.id.equals(customerId) &
+              customer.businessId.equals(businessId),
+        ))
         .getSingleOrNull();
   }
 
@@ -108,39 +95,110 @@ class CustomerService {
     final trimmedName = name.trim();
 
     if (trimmedName.isEmpty) {
-      throw ArgumentError(
-        'Customer name cannot be empty.',
-      );
+      throw ArgumentError('Customer name cannot be empty.');
     }
 
-    final customer = await (_database.select(_database.customers)
-          ..where(
-            (customer) =>
-                customer.id.equals(customerId) &
-                customer.businessId.equals(businessId),
-          ))
-        .getSingleOrNull();
+    final customer =
+        await (_database.select(_database.customers)..where(
+              (customer) =>
+                  customer.id.equals(customerId) &
+                  customer.businessId.equals(businessId),
+            ))
+            .getSingleOrNull();
 
     if (customer == null) {
-      throw StateError(
-        'Customer not found for this business: $customerId',
-      );
+      throw StateError('Customer not found for this business: $customerId');
     }
 
-    await (_database.update(_database.customers)
-          ..where(
-            (customer) =>
-                customer.id.equals(customerId) &
-                customer.businessId.equals(businessId),
-          ))
+    await (_database.update(_database.customers)..where(
+          (customer) =>
+              customer.id.equals(customerId) &
+              customer.businessId.equals(businessId),
+        ))
         .write(
-      CustomersCompanion(
-        name: Value(trimmedName),
-        phone: Value(phone),
-        address: Value(address),
-        isActive: Value(isActive),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
+          CustomersCompanion(
+            name: Value(trimmedName),
+            phone: Value(phone),
+            address: Value(address),
+            isActive: Value(isActive),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+  }
+
+  /// Deletes a customer only if they have no transaction history.
+  ///
+  /// Returns true if permanently deleted.
+  /// Returns false if deactivated to preserve historical records.
+  Future<bool> deleteCustomer({
+    required String businessId,
+    required String customerId,
+  }) async {
+    return _database.transaction(() async {
+      final customer =
+          await (_database.select(_database.customers)..where(
+                (c) =>
+                    c.id.equals(customerId) & c.businessId.equals(businessId),
+              ))
+              .getSingleOrNull();
+
+      if (customer == null) {
+        throw StateError('Customer not found.');
+      }
+
+      final sales =
+          await (_database.select(_database.sales)
+                ..where(
+                  (s) =>
+                      s.businessId.equals(businessId) &
+                      s.customerId.equals(customerId),
+                )
+                ..limit(1))
+              .get();
+
+      final payments =
+          await (_database.select(_database.payments)
+                ..where(
+                  (p) =>
+                      p.businessId.equals(businessId) &
+                      p.customerId.equals(customerId),
+                )
+                ..limit(1))
+              .get();
+
+      final ledgerEntries =
+          await (_database.select(_database.ledgerEntries)
+                ..where(
+                  (entry) =>
+                      entry.businessId.equals(businessId) &
+                      entry.customerId.equals(customerId),
+                )
+                ..limit(1))
+              .get();
+
+      final hasHistory =
+          sales.isNotEmpty || payments.isNotEmpty || ledgerEntries.isNotEmpty;
+
+      if (hasHistory) {
+        await (_database.update(_database.customers)..where(
+              (c) => c.id.equals(customerId) & c.businessId.equals(businessId),
+            ))
+            .write(
+              CustomersCompanion(
+                isActive: const Value(false),
+                updatedAt: Value(DateTime.now()),
+              ),
+            );
+
+        return false;
+      }
+
+      await (_database.delete(_database.customers)..where(
+            (c) => c.id.equals(customerId) & c.businessId.equals(businessId),
+          ))
+          .go();
+
+      return true;
+    });
   }
 }

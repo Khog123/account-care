@@ -16,6 +16,7 @@ import 'tables/payments.dart';
 import 'tables/ledger_entries.dart';
 import 'tables/inventory_movements.dart';
 import 'tables/expenses.dart';
+import 'tables/payment_allocations.dart';
 
 part 'app_database.g.dart';
 
@@ -29,6 +30,7 @@ part 'app_database.g.dart';
     Sales,
     SaleItems,
     Payments,
+    PaymentAllocations,
     LedgerEntries,
     InventoryMovements,
     Expenses,
@@ -40,7 +42,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.test() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -51,6 +53,10 @@ class AppDatabase extends _$AppDatabase {
     onUpgrade: (Migrator m, int from, int to) async {
       if (from < 2) {
         await m.addColumn(saleItems, saleItems.purchasePriceMinor);
+      }
+
+      if (from < 3) {
+        await m.createTable(paymentAllocations);
       }
     },
   );

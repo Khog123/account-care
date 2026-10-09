@@ -270,7 +270,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
       });
 
       ref.invalidate(productListProvider);
-      ref.invalidate(customerListProvider);
+      ref.invalidate(customerListProvider(false));
       ref.invalidate(dashboardProvider);
 
       _showMessage('Sale completed successfully.');
@@ -893,7 +893,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                     : addressController.text.trim(),
                               );
 
-                              ref.invalidate(customerListProvider);
+                              ref.invalidate(customerListProvider(false));
 
                               if (dialogContext.mounted) {
                                 Navigator.of(dialogContext).pop(customerId);
@@ -941,7 +941,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
   @override
   Widget build(BuildContext context) {
     final productsAsync = ref.watch(productListProvider);
-    final customersAsync = ref.watch(customerListProvider);
+    final customersAsync = ref.watch(customerListProvider(false));
 
     return Scaffold(
       appBar: AppBar(title: const Text('New Sale')),
