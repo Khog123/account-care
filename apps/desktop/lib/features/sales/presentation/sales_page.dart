@@ -8,7 +8,7 @@ import '../../../core/providers/customer_provider.dart';
 import '../../../core/providers/dashboard_provider.dart';
 import '../../../core/providers/product_provider.dart';
 import '../../../core/providers/service_providers.dart';
-import '../../../core/services/sale_services.dart';
+import '../../../core/services/sale_service.dart';
 
 class SalesPage extends ConsumerStatefulWidget {
   const SalesPage({super.key});

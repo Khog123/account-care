@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:desktop/core/database/app_database.dart';
-import 'package:desktop/core/services/sale_services.dart';
+import 'package:desktop/core/services/sale_service.dart';
 
 void main() {
   late AppDatabase database;
