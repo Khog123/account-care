@@ -213,7 +213,7 @@ class PaymentService {
             );
       }
 
-      // Allocate only the amount that has not already been allocated.
+      // Load allocations already recorded for this legacy payment.
       final existingAllocations =
           await (_database.select(_database.paymentAllocations)..where(
                 (allocation) =>
@@ -221,6 +221,33 @@ class PaymentService {
                     allocation.paymentId.equals(payment.id),
               ))
               .get();
+
+      // Reject invalid allocations before allocating any remaining amount.
+      for (final allocation in existingAllocations) {
+        if (allocation.amountMinor <= 0) {
+          throw StateError(
+            'Legacy payment ${payment.id} has a non-positive allocation '
+            '(${allocation.amountMinor}).',
+          );
+        }
+
+        final invoice =
+            await (_database.select(_database.sales)..where(
+                  (sale) =>
+                      sale.id.equals(allocation.saleId) &
+                      sale.businessId.equals(businessId) &
+                      sale.customerId.equals(customerId),
+                ))
+                .getSingleOrNull();
+
+        if (invoice == null) {
+          throw StateError(
+            'Legacy payment ${payment.id} has an allocation referencing '
+            'an invoice that does not belong to this business and customer '
+            '(${allocation.saleId}).',
+          );
+        }
+      }
 
       final alreadyAllocatedMinor = existingAllocations.fold<int>(
         0,

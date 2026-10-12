@@ -930,6 +930,103 @@ void main() {
   );
 
   test(
+    'rejects a legacy payment allocation referencing a missing invoice',
+    () async {
+      final now = DateTime.now();
+      final legacyPaymentDate = now.subtract(const Duration(days: 1));
+
+      await database
+          .into(database.businesses)
+          .insert(
+            BusinessesCompanion.insert(
+              id: 'invalid-allocation-business',
+              name: 'Invalid Allocation Business',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.users)
+          .insert(
+            UsersCompanion.insert(
+              id: 'invalid-allocation-user',
+              businessId: 'invalid-allocation-business',
+              name: 'Invalid Allocation User',
+              username: 'invalid-allocation-user',
+              passwordHash: 'test-hash',
+              role: 'master_merchant',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.customers)
+          .insert(
+            CustomersCompanion.insert(
+              id: 'invalid-allocation-customer',
+              businessId: 'invalid-allocation-business',
+              name: 'Invalid Allocation Customer',
+              openingBalanceMinor: const Value(100000),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.payments)
+          .insert(
+            PaymentsCompanion.insert(
+              id: 'invalid-allocation-legacy-payment',
+              businessId: 'invalid-allocation-business',
+              customerId: const Value('invalid-allocation-customer'),
+              userId: 'invalid-allocation-user',
+              amountMinor: 30000,
+              paymentMethod: 'cash',
+              paidAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      await database
+          .into(database.paymentAllocations)
+          .insert(
+            PaymentAllocationsCompanion.insert(
+              id: 'invalid-allocation-row',
+              businessId: 'invalid-allocation-business',
+              paymentId: 'invalid-allocation-legacy-payment',
+              saleId: 'missing-invoice',
+              amountMinor: 10000,
+              allocatedAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      await expectLater(
+        paymentService.recordPayment(
+          businessId: 'invalid-allocation-business',
+          customerId: 'invalid-allocation-customer',
+          userId: 'invalid-allocation-user',
+          paymentId: 'should-not-be-inserted',
+          amountMinor: 10000,
+          paymentMethod: 'cash',
+          paidAt: now,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final attemptedPayment =
+          await (database.select(database.payments)..where(
+                (payment) => payment.id.equals('should-not-be-inserted'),
+              ))
+              .getSingleOrNull();
+
+      expect(attemptedPayment, isNull);
+    },
+  );
+
+  test(
     'rejects a legacy payment with allocations exceeding its amount',
     () async {
       final now = DateTime.now();
@@ -1047,6 +1144,143 @@ void main() {
               .get();
 
       expect(legacyLedgerEntries, isEmpty);
+    },
+  );
+
+  test(
+    'clears invoice first and preserves remaining opening balance',
+    () async {
+      final now = DateTime.now();
+      final invoiceDate = now.subtract(const Duration(days: 1));
+
+      await database
+          .into(database.businesses)
+          .insert(
+            BusinessesCompanion.insert(
+              id: 'mixed-business',
+              name: 'Mixed Balance Test Business',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.users)
+          .insert(
+            UsersCompanion.insert(
+              id: 'mixed-user',
+              businessId: 'mixed-business',
+              name: 'Mixed Balance Test User',
+              username: 'mixed-user',
+              passwordHash: 'test-hash',
+              role: 'master_merchant',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.customers)
+          .insert(
+            CustomersCompanion.insert(
+              id: 'mixed-customer',
+              businessId: 'mixed-business',
+              name: 'Mixed Balance Customer',
+              openingBalanceMinor: const Value(50000),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.sales)
+          .insert(
+            SalesCompanion.insert(
+              id: 'mixed-sale',
+              businessId: 'mixed-business',
+              customerId: const Value('mixed-customer'),
+              userId: 'mixed-user',
+              invoiceNumber: 'MIXED-001',
+              subtotalMinor: 100000,
+              discountMinor: const Value(0),
+              totalMinor: 100000,
+              paidMinor: const Value(0),
+              dueMinor: const Value(100000),
+              status: 'completed',
+              soldAt: invoiceDate,
+              createdAt: invoiceDate,
+            ),
+          );
+
+      await database
+          .into(database.ledgerEntries)
+          .insert(
+            LedgerEntriesCompanion.insert(
+              id: 'mixed-sale-ledger',
+              businessId: 'mixed-business',
+              customerId: 'mixed-customer',
+              saleId: const Value('mixed-sale'),
+              entryType: 'sale_credit',
+              amountMinor: 100000,
+              description: const Value('Credit for MIXED-001'),
+              entryAt: invoiceDate,
+              createdAt: invoiceDate,
+            ),
+          );
+
+      await paymentService.recordPayment(
+        businessId: 'mixed-business',
+        customerId: 'mixed-customer',
+        userId: 'mixed-user',
+        paymentId: 'mixed-payment',
+        amountMinor: 120000,
+        paymentMethod: 'cash',
+        paidAt: now,
+      );
+
+      final invoice =
+          await (database.select(database.sales)..where(
+                (sale) =>
+                    sale.businessId.equals('mixed-business') &
+                    sale.id.equals('mixed-sale'),
+              ))
+              .getSingle();
+
+      expect(invoice.paidMinor, 100000);
+      expect(invoice.dueMinor, 0);
+
+      final allocations =
+          await (database.select(database.paymentAllocations)..where(
+                (allocation) => allocation.paymentId.equals('mixed-payment'),
+              ))
+              .get();
+
+      expect(allocations, hasLength(1));
+      expect(allocations.single.saleId, 'mixed-sale');
+      expect(allocations.single.amountMinor, 100000);
+
+      final paymentLedgerEntries =
+          await (database.select(database.ledgerEntries)..where(
+                (entry) =>
+                    entry.businessId.equals('mixed-business') &
+                    entry.customerId.equals('mixed-customer') &
+                    entry.paymentId.equals('mixed-payment') &
+                    entry.entryType.equals('payment'),
+              ))
+              .get();
+
+      expect(paymentLedgerEntries, hasLength(1));
+      expect(paymentLedgerEntries.single.amountMinor, 120000);
+
+      final customerLedgerService = CustomerLedgerService(database);
+      final outstandingBalance = await customerLedgerService
+          .getOutstandingBalance(
+            businessId: 'mixed-business',
+            customerId: 'mixed-customer',
+          );
+
+      // Rs. 500 opening balance + Rs. 1,000 invoice - Rs. 1,200 payment.
+      expect(outstandingBalance, 30000);
     },
   );
 
