@@ -7,6 +7,8 @@ import '../../../core/database/app_database.dart';
 import '../../../core/providers/business_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/service_providers.dart';
+import '../../../core/providers/customer_provider.dart';
+import '../../../core/providers/dashboard_provider.dart';
 
 class PaymentsPage extends ConsumerStatefulWidget {
   const PaymentsPage({super.key});
@@ -426,6 +428,10 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
 
         if (result == true && mounted) {
           _refresh();
+
+          ref.invalidate(dashboardProvider);
+          ref.invalidate(customerListProvider(false));
+
           _message('Payment recorded successfully.');
         }
       } finally {

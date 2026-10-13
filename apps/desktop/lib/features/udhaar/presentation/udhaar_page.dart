@@ -317,7 +317,9 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
 
                       final totalDebt = allDebtors.fold<int>(
                         0,
-                        (sum, debt) => sum + debt.balanceMinor,
+                        (sum, debt) =>
+                            sum +
+                            (debt.balanceMinor > 0 ? debt.balanceMinor : 0),
                       );
 
                       final selectedCustomer = allDebtors
