@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' hide Column;
@@ -20,6 +23,8 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
 
   String _searchQuery = '';
   Customer? _selectedCustomer;
+  bool _isExportingDebtors = false;
+  final Set<String> _exportingCustomerIds = {};
 
   @override
   void dispose() {
@@ -30,6 +35,173 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
   String _money(int minor) {
     final amount = (minor.abs() / 100).toStringAsFixed(2);
     return '${minor < 0 ? '-' : ''}Rs. $amount';
+  }
+
+  Future<void> _exportAllDebtors({
+    required List<Customer> customers,
+    required Map<String, int> balancesMinor,
+    required String businessId,
+  }) async {
+    if (_isExportingDebtors) return;
+
+    setState(() => _isExportingDebtors = true);
+
+    try {
+      final businesses = await ref.read(businessListProvider.future);
+      final business = businesses
+          .where((item) => item.id == businessId)
+          .firstOrNull;
+
+      if (business == null) {
+        throw StateError('Active business could not be found.');
+      }
+
+      final saveLocation = await getSaveLocation(
+        suggestedName:
+            'account_care_debtors_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx',
+        acceptedTypeGroups: [
+          const XTypeGroup(label: 'Excel workbook', extensions: ['xlsx']),
+        ],
+      );
+
+      if (saveLocation == null) return;
+
+      final bytes = await ref
+          .read(excelExportServiceProvider)
+          .createDebtorsWorkbook(
+            businessName: business.name,
+            currencyCode: business.currencyCode,
+            customers: customers,
+            balancesMinor: balancesMinor,
+          );
+
+      await File(saveLocation.path).writeAsBytes(bytes, flush: true);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debtors list exported successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export debtors: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _isExportingDebtors = false);
+    }
+  }
+
+  Future<void> _exportCustomerHistory({
+    required Customer customer,
+    required String businessId,
+  }) async {
+    if (_exportingCustomerIds.contains(customer.id)) return;
+
+    setState(() => _exportingCustomerIds.add(customer.id));
+
+    try {
+      final businesses = await ref.read(businessListProvider.future);
+      final business = businesses
+          .where((item) => item.id == businessId)
+          .firstOrNull;
+
+      if (business == null) {
+        throw StateError('Active business could not be found.');
+      }
+
+      final database = ref.read(databaseProvider);
+      final ledgerService = ref.read(customerLedgerServiceProvider);
+
+      final sales =
+          await (database.select(database.sales)
+                ..where(
+                  (sale) =>
+                      sale.businessId.equals(businessId) &
+                      sale.customerId.equals(customer.id) &
+                      sale.status.equals('completed'),
+                )
+                ..orderBy([(sale) => OrderingTerm.asc(sale.soldAt)]))
+              .get();
+
+      final saleIds = sales.map((sale) => sale.id).toSet();
+
+      final saleItems = saleIds.isEmpty
+          ? <SaleItem>[]
+          : await (database.select(
+              database.saleItems,
+            )..where((item) => item.saleId.isIn(saleIds))).get();
+
+      final payments =
+          await (database.select(database.payments)
+                ..where(
+                  (payment) =>
+                      payment.businessId.equals(businessId) &
+                      payment.customerId.equals(customer.id),
+                )
+                ..orderBy([(payment) => OrderingTerm.asc(payment.paidAt)]))
+              .get();
+
+      final paymentIds = payments.map((payment) => payment.id).toSet();
+
+      final allocations = paymentIds.isEmpty
+          ? <PaymentAllocation>[]
+          : await (database.select(database.paymentAllocations)..where(
+                  (allocation) =>
+                      allocation.businessId.equals(businessId) &
+                      allocation.paymentId.isIn(paymentIds),
+                ))
+                .get();
+
+      final ledgerEntries = await ledgerService.getLedgerEntries(
+        businessId: businessId,
+        customerId: customer.id,
+      );
+
+      final balanceMinor = await ledgerService.getOutstandingBalance(
+        businessId: businessId,
+        customerId: customer.id,
+      );
+
+      final saveLocation = await getSaveLocation(
+        suggestedName:
+            'account_care_${customer.name.replaceAll(RegExp(r'[^\w-]+'), '_')}_history_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx',
+        acceptedTypeGroups: [
+          const XTypeGroup(label: 'Excel workbook', extensions: ['xlsx']),
+        ],
+      );
+
+      if (saveLocation == null) return;
+
+      final bytes = await ref
+          .read(excelExportServiceProvider)
+          .createCustomerHistoryWorkbook(
+            customer: customer,
+            businessName: business.name,
+            currencyCode: business.currencyCode,
+            balanceMinor: balanceMinor,
+            sales: sales,
+            saleItems: saleItems,
+            payments: payments,
+            allocations: allocations,
+            ledgerEntries: ledgerEntries,
+          );
+
+      await File(saveLocation.path).writeAsBytes(bytes, flush: true);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('History exported for ${customer.name}.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export customer history: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _exportingCustomerIds.remove(customer.id));
+      }
+    }
   }
 
   @override
@@ -186,7 +358,46 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                       ],
                                     ),
                                   ),
-                                  Text('${allDebtors.length} customers'),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text('${allDebtors.length} customers'),
+                                      const SizedBox(width: 12),
+
+                                      FilledButton.icon(
+                                        onPressed: _isExportingDebtors
+                                            ? null
+                                            : () => _exportAllDebtors(
+                                                businessId: businessId,
+                                                customers: allDebtors
+                                                    .map(
+                                                      (debt) => debt.customer,
+                                                    )
+                                                    .toList(),
+                                                balancesMinor: {
+                                                  for (final debt in allDebtors)
+                                                    debt.customer.id:
+                                                        debt.balanceMinor,
+                                                },
+                                              ),
+                                        icon: _isExportingDebtors
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(Icons.download),
+                                        label: Text(
+                                          _isExportingDebtors
+                                              ? 'Exporting...'
+                                              : 'Download All Debtors',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),
@@ -235,12 +446,59 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                                   debt.customer.phone ??
                                                       'No phone',
                                                 ),
-                                                trailing: Text(
-                                                  _money(debt.balanceMinor),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
+
+                                                trailing: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    IconButton(
+                                                      tooltip: 'Export customer history',
+                                                      onPressed:
+                                                          _exportingCustomerIds
+                                                              .contains(
+                                                                debt
+                                                                    .customer
+                                                                    .id,
+                                                              )
+                                                          ? null
+                                                          : () =>
+                                                                _exportCustomerHistory(
+                                                                  customer: debt
+                                                                      .customer,
+                                                                  businessId:
+                                                                      businessId,
+                                                                ),
+                                                      icon:
+                                                          _exportingCustomerIds
+                                                              .contains(
+                                                                debt
+                                                                    .customer
+                                                                    .id,
+                                                              )
+                                                          ? const SizedBox(
+                                                              width: 18,
+                                                              height: 18,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2,
+                                                                  ),
+                                                            )
+                                                          : const Icon(
+                                                              Icons
+                                                                  .download_outlined,
+                                                            ),
+                                                    ),
+                                                    Text(
+                                                      _money(debt.balanceMinor),
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
+
                                                 onTap: () {
                                                   setState(() {
                                                     _selectedCustomer =

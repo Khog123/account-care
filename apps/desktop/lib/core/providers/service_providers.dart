@@ -10,6 +10,8 @@ import '../services/sale_service.dart';
 import '../services/user_service.dart';
 import '../services/inventory_service.dart';
 import '../services/reports_service.dart';
+import '../services/database_backup_service.dart';
+import '../services/excel_export_service.dart';
 
 import 'database_provider.dart';
 
@@ -61,12 +63,19 @@ final customerLedgerServiceProvider = Provider<CustomerLedgerService>((ref) {
 
 final paymentServiceProvider = Provider<PaymentService>((ref) {
   final database = ref.watch(databaseProvider);
-
   return PaymentService(database);
 });
 
 final reportsServiceProvider = Provider<ReportsService>((ref) {
   final database = ref.watch(databaseProvider);
-
   return ReportsService(database);
+});
+
+final databaseBackupServiceProvider = Provider<DatabaseBackupService>((ref) {
+  final database = ref.watch(databaseProvider);
+  return DatabaseBackupService(database);
+});
+
+final excelExportServiceProvider = Provider<ExcelExportService>((ref) {
+  return ExcelExportService();
 });
