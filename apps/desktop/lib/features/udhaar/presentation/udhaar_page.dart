@@ -224,7 +224,7 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -333,7 +333,7 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                         children: [
                           Card(
                             child: Padding(
-                              padding: const EdgeInsets.all(20),
+                              padding: const EdgeInsets.all(12),
                               child: Row(
                                 children: [
                                   const Icon(
@@ -407,9 +407,12 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
 
                           const SizedBox(height: 16),
                           Expanded(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
+                            child: Flex(
+  direction: MediaQuery.sizeOf(context).width < 1100
+      ? Axis.vertical
+      : Axis.horizontal,
+  crossAxisAlignment: CrossAxisAlignment.stretch,
+  children: [
                                 // Left panel: customer list.
                                 Expanded(
                                   flex: 2,
@@ -512,7 +515,10 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                           ),
                                         ),
                                 ),
-                                const SizedBox(width: 16),
+                               SizedBox(
+  width: MediaQuery.sizeOf(context).width < 1100 ? 0 : 16,
+  height: MediaQuery.sizeOf(context).width < 1100 ? 12 : 0,
+),
 
                                 // Right panel: selected customer's history.
                                 Expanded(

@@ -59,7 +59,7 @@ class ReportsPage extends ConsumerWidget {
   }) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -72,7 +72,7 @@ class ReportsPage extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
               value,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -174,7 +174,7 @@ class ReportsPage extends ConsumerWidget {
                         physics: const NeverScrollableScrollPhysics(),
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
-                        childAspectRatio: 2.5,
+                        childAspectRatio: 1.8,
                         children: [
                           _summaryCard(
                             title: 'Completed Sales',
