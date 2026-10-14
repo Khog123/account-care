@@ -8,6 +8,7 @@ import '../../../core/providers/customer_provider.dart';
 import '../../../core/providers/dashboard_provider.dart';
 import '../../../core/providers/product_provider.dart';
 import '../../../core/providers/service_providers.dart';
+import '../../../core/providers/reports_providers.dart';
 import '../../../core/services/sale_service.dart';
 
 class SalesPage extends ConsumerStatefulWidget {
@@ -272,6 +273,8 @@ class _SalesPageState extends ConsumerState<SalesPage> {
       ref.invalidate(productListProvider);
       ref.invalidate(customerListProvider(false));
       ref.invalidate(dashboardProvider);
+      ref.invalidate(salesReportProvider);
+      ref.invalidate(topSellingProductsProvider);
 
       _showMessage('Sale completed successfully.');
     } catch (error) {
