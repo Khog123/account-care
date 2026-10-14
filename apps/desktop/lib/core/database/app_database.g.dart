@@ -7125,6 +7125,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $InventoryMovementsTable inventoryMovements =
       $InventoryMovementsTable(this);
   late final $ExpensesTable expenses = $ExpensesTable(this);
+  late final Index salesBusinessInvoiceUnique = Index(
+    'sales_business_invoice_unique',
+    'CREATE UNIQUE INDEX sales_business_invoice_unique ON sales (business_id, invoice_number)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -7142,6 +7146,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     ledgerEntries,
     inventoryMovements,
     expenses,
+    salesBusinessInvoiceUnique,
   ];
 }
 

@@ -42,7 +42,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.test() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -57,6 +57,13 @@ class AppDatabase extends _$AppDatabase {
 
       if (from < 3) {
         await m.createTable(paymentAllocations);
+      }
+
+      if (from < 4) {
+        await customStatement(
+          'CREATE UNIQUE INDEX sales_business_invoice_unique '
+          'ON sales (business_id, invoice_number)',
+        );
       }
     },
   );
