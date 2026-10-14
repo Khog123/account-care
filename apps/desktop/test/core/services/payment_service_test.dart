@@ -1459,4 +1459,182 @@ void main() {
     expect(paymentLedgerEntries, hasLength(1));
     expect(paymentLedgerEntries.single.amountMinor, 220000);
   });
+
+  test(
+    'does not duplicate existing legacy allocations on repeated reconciliation',
+    () async {
+      final now = DateTime.now();
+      final invoiceDate = now.subtract(const Duration(days: 3));
+      final legacyPaymentDate = now.subtract(const Duration(days: 2));
+      final reconciliationPaymentDate = now.subtract(const Duration(days: 1));
+
+      await database
+          .into(database.businesses)
+          .insert(
+            BusinessesCompanion.insert(
+              id: 'repeat-business',
+              name: 'Repeat Reconciliation Business',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.users)
+          .insert(
+            UsersCompanion.insert(
+              id: 'repeat-user',
+              businessId: 'repeat-business',
+              name: 'Repeat Test User',
+              username: 'repeat-user',
+              passwordHash: 'test-hash',
+              role: 'master_merchant',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.customers)
+          .insert(
+            CustomersCompanion.insert(
+              id: 'repeat-customer',
+              businessId: 'repeat-business',
+              name: 'Repeat Test Customer',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      await database
+          .into(database.sales)
+          .insert(
+            SalesCompanion.insert(
+              id: 'repeat-sale',
+              businessId: 'repeat-business',
+              customerId: const Value('repeat-customer'),
+              userId: 'repeat-user',
+              invoiceNumber: 'REPEAT-001',
+              subtotalMinor: 100000,
+              discountMinor: const Value(0),
+              totalMinor: 100000,
+              paidMinor: const Value(40000),
+              dueMinor: const Value(60000),
+              status: 'completed',
+              soldAt: invoiceDate,
+              createdAt: invoiceDate,
+            ),
+          );
+
+      await database
+          .into(database.ledgerEntries)
+          .insert(
+            LedgerEntriesCompanion.insert(
+              id: 'repeat-sale-credit',
+              businessId: 'repeat-business',
+              customerId: 'repeat-customer',
+              saleId: const Value('repeat-sale'),
+              entryType: 'sale_credit',
+              amountMinor: 100000,
+              description: const Value('Repeat reconciliation invoice'),
+              entryAt: invoiceDate,
+              createdAt: invoiceDate,
+            ),
+          );
+
+      await database
+          .into(database.payments)
+          .insert(
+            PaymentsCompanion.insert(
+              id: 'repeat-legacy-payment',
+              businessId: 'repeat-business',
+              customerId: const Value('repeat-customer'),
+              userId: 'repeat-user',
+              amountMinor: 40000,
+              paymentMethod: 'cash',
+              paidAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      // The existing allocation should be recognized, not duplicated.
+      await database
+          .into(database.paymentAllocations)
+          .insert(
+            PaymentAllocationsCompanion.insert(
+              id: 'repeat-existing-allocation',
+              businessId: 'repeat-business',
+              paymentId: 'repeat-legacy-payment',
+              saleId: 'repeat-sale',
+              amountMinor: 40000,
+              allocatedAt: legacyPaymentDate,
+              createdAt: legacyPaymentDate,
+            ),
+          );
+
+      // Record a small payment to trigger legacy reconciliation.
+      await paymentService.recordPayment(
+        businessId: 'repeat-business',
+        customerId: 'repeat-customer',
+        userId: 'repeat-user',
+        paymentId: 'repeat-trigger-1',
+        amountMinor: 10000,
+        paymentMethod: 'cash',
+        paidAt: reconciliationPaymentDate,
+      );
+
+      final allocationsAfterFirst = await (database.select(
+        database.paymentAllocations,
+      )..where((row) => row.businessId.equals('repeat-business'))).get();
+
+      final invoiceAfterFirst = await (database.select(
+        database.sales,
+      )..where((row) => row.id.equals('repeat-sale'))).getSingle();
+
+      // Trigger reconciliation again with another payment.
+      await paymentService.recordPayment(
+        businessId: 'repeat-business',
+        customerId: 'repeat-customer',
+        userId: 'repeat-user',
+        paymentId: 'repeat-trigger-2',
+        amountMinor: 10000,
+        paymentMethod: 'cash',
+        paidAt: now,
+      );
+
+      final allocationsAfterSecond = await (database.select(
+        database.paymentAllocations,
+      )..where((row) => row.businessId.equals('repeat-business'))).get();
+
+      final invoiceAfterSecond = await (database.select(
+        database.sales,
+      )..where((row) => row.id.equals('repeat-sale'))).getSingle();
+
+      expect(allocationsAfterFirst.length, 2);
+      expect(allocationsAfterSecond.length, 3);
+
+      // Only the two new payments should reduce the invoice further.
+      expect(invoiceAfterFirst.paidMinor, 50000);
+      expect(invoiceAfterFirst.dueMinor, 50000);
+      expect(invoiceAfterSecond.paidMinor, 60000);
+      expect(invoiceAfterSecond.dueMinor, 40000);
+
+      final legacyAllocations = allocationsAfterSecond
+          .where((row) => row.paymentId == 'repeat-legacy-payment')
+          .toList();
+
+      expect(legacyAllocations, hasLength(1));
+      expect(legacyAllocations.single.amountMinor, 40000);
+
+      final legacyPaymentLedger =
+          await (database.select(database.ledgerEntries)..where(
+                (row) =>
+                    row.paymentId.equals('repeat-legacy-payment') &
+                    row.entryType.equals('payment'),
+              ))
+              .get();
+
+      expect(legacyPaymentLedger, hasLength(1));
+    },
+  );
 }
