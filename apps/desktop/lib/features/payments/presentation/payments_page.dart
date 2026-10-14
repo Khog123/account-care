@@ -123,7 +123,9 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
 
     try {
       final database = ref.read(databaseProvider);
-      final customers =
+      final ledgerService = ref.read(customerLedgerServiceProvider);
+
+      final activeCustomers =
           await (database.select(database.customers)
                 ..where(
                   (c) =>
@@ -132,12 +134,27 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                 ..orderBy([(c) => OrderingTerm.asc(c.name)]))
               .get();
 
+      final customersWithOutstanding = <Customer>[];
+
+      for (final customer in activeCustomers) {
+        final outstandingMinor = await ledgerService.getOutstandingBalance(
+          businessId: businessId,
+          customerId: customer.id,
+        );
+
+        if (outstandingMinor > 0) {
+          customersWithOutstanding.add(customer);
+        }
+      }
+
       if (!mounted) return;
 
-      if (customers.isEmpty) {
-        _message('Add an active customer before recording a payment.');
+      if (customersWithOutstanding.isEmpty) {
+        _message('No active customers currently have outstanding dues.');
         return;
       }
+
+      final customers = customersWithOutstanding;
 
       final formKey = GlobalKey<FormState>();
       final amountController = TextEditingController();
