@@ -52,7 +52,7 @@ void main() {
 
       final versionResult = verificationDb.select('PRAGMA user_version;');
 
-      expect(versionResult.first['user_version'], 3);
+      expect(versionResult.first['user_version'], 4);
 
       final tables = verificationDb
           .select("SELECT name FROM sqlite_master WHERE type = 'table';")

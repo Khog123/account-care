@@ -50,10 +50,9 @@ class DatabaseBackupService {
 
         final versionResult = verificationDb.select('PRAGMA user_version;');
         final version = versionResult.first['user_version'] as int;
-
-        if (version != 3) {
+        if (version != 4) {
           throw StateError(
-            'The backup schema version is $version; expected version 3.',
+            'The backup schema version is $version; expected version 4.',
           );
         }
 

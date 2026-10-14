@@ -5,6 +5,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/providers/business_provider.dart';
 import '../../../core/providers/customer_provider.dart';
 import '../../../core/providers/service_providers.dart';
+import '../../../core/providers/dashboard_provider.dart';
 
 class CustomersPage extends ConsumerStatefulWidget {
   const CustomersPage({super.key});
@@ -246,6 +247,8 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
                               ref.invalidate(
                                 customerListProvider(_showInactive),
                               );
+
+                              ref.invalidate(dashboardProvider);
 
                               if (dialogContext.mounted) {
                                 Navigator.of(dialogContext).pop(true);
