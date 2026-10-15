@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,8 +64,8 @@ void main() {
 
     expect(find.text('Dashboard'), findsNWidgets(2));
     expect(find.text("Today's Sales"), findsOneWidget);
-    expect(find.text("Today's Profit"), findsOneWidget);
-    expect(find.text('Credit Due'), findsOneWidget);
+    expect(find.text('Active Products'), findsOneWidget);
+    expect(find.text('Outstanding Credit'), findsOneWidget);
     expect(find.text('Low Stock'), findsOneWidget);
     expect(find.text('Account Care'), findsOneWidget);
     expect(find.text('New Sale'), findsOneWidget);
@@ -92,4 +92,4 @@ class TestActiveUserIdNotifier
   String? build() {
     return 'test-user';
   }
-} 
+}
