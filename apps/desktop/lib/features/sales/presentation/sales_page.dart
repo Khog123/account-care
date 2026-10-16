@@ -448,21 +448,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                   ],
                                 ),
                               ),
-                              IconButton(
-                                tooltip: 'Remove product',
-                                visualDensity: VisualDensity.compact,
-                                constraints: const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 32,
-                                ),
-                                padding: EdgeInsets.zero,
-                                onPressed: () => _removeProduct(item.product),
-                                icon: const Icon(
-                                  Icons.close,
-                                  size: 17,
-                                  color: AccountCareTheme.red,
-                                ),
-                              ),
+
                               const SizedBox(width: 4),
 
                               // Type a quantity directly, such as 55.

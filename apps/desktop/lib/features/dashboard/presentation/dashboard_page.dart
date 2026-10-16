@@ -81,11 +81,11 @@ class _DashboardContent extends StatelessWidget {
                 crossAxisCount: cardColumns,
                 crossAxisSpacing: 14,
                 mainAxisSpacing: 14,
-                childAspectRatio: cardColumns == 1
-                    ? 4.8
+                mainAxisExtent: cardColumns == 1
+                    ? 124
                     : cardColumns == 2
-                    ? 2.9
-                    : 1.9,
+                    ? 138
+                    : 140,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
