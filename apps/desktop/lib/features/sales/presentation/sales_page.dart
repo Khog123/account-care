@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme.dart';
+
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/business_provider.dart';
 import '../../../core/providers/customer_provider.dart';
@@ -159,17 +161,12 @@ class _SalesPageState extends ConsumerState<SalesPage> {
 
   void _changeQuantity(Product product, int change) {
     final existing = _findCartItem(product.id);
-
-    if (existing == null) {
-      return;
-    }
+    if (existing == null) return;
 
     final newQuantity = existing.quantity + change;
 
-    if (newQuantity <= 0) {
-      setState(() {
-        _cart.remove(existing);
-      });
+    if (newQuantity < 1) {
+      _showMessage('Quantity cannot be less than 1. Use × to remove it.');
       return;
     }
 
@@ -183,7 +180,6 @@ class _SalesPageState extends ConsumerState<SalesPage> {
 
     setState(() {
       final index = _cart.indexOf(existing);
-
       _cart[index] = existing.copyWith(quantity: newQuantity);
     });
   }
@@ -307,7 +303,13 @@ class _SalesPageState extends ConsumerState<SalesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Products', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Products',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: AccountCareTheme.text,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: _searchController,
@@ -343,7 +345,13 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                             horizontal: 4,
                             vertical: 4,
                           ),
-                          title: Text(product.name),
+                          title: Text(
+                            product.name,
+                            style: const TextStyle(
+                              color: AccountCareTheme.text,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           subtitle: Text(
                             '${_formatMoney(product.salePriceMinor)}'
                             '  |  Stock: ${product.stockQuantity}',
@@ -366,8 +374,14 @@ class _SalesPageState extends ConsumerState<SalesPage> {
 
   Widget _buildCartPanel(List<Customer> customers) {
     return Card(
+      color: AccountCareTheme.card,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AccountCareTheme.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -375,77 +389,195 @@ class _SalesPageState extends ConsumerState<SalesPage> {
               children: [
                 Text(
                   'Current Sale',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: AccountCareTheme.text,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const Spacer(),
                 Text(
                   '${_cart.length} item types',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: const TextStyle(
+                    color: AccountCareTheme.muted,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
 
-            // Cart area
-            Expanded(
+            // Compact cart list: this region scrolls independently.
+            SizedBox(
+              height: 175,
               child: _cart.isEmpty
                   ? const Center(child: Text('No products added yet.'))
                   : ListView.separated(
+                      padding: EdgeInsets.zero,
                       itemCount: _cart.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, thickness: 0.5),
                       itemBuilder: (context, index) {
                         final item = _cart[index];
 
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 4,
-                          ),
-                          title: Text(item.product.name),
-                          subtitle: Text(
-                            '${_formatMoney(item.product.salePriceMinor)}'
-                            ' x ${item.quantity}',
-                          ),
-                          leading: IconButton(
-                            tooltip: 'Remove',
-                            onPressed: () {
-                              _removeProduct(item.product);
-                            },
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(
                             children: [
-                              IconButton(
-                                tooltip: 'Decrease quantity',
-                                onPressed: () {
-                                  _changeQuantity(item.product, -1);
-                                },
-                                icon: const Icon(Icons.remove_circle_outline),
-                              ),
-                              SizedBox(
-                                width: 36,
-                                child: Text(
-                                  '${item.quantity}',
-                                  textAlign: TextAlign.center,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      item.product.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AccountCareTheme.text,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${_formatMoney(item.product.salePriceMinor)} each',
+                                      style: const TextStyle(
+                                        color: AccountCareTheme.muted,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               IconButton(
-                                tooltip: 'Increase quantity',
-                                onPressed:
-                                    item.quantity < item.product.stockQuantity
-                                    ? () {
-                                        _changeQuantity(item.product, 1);
-                                      }
-                                    : null,
-                                icon: const Icon(Icons.add_circle_outline),
+                                tooltip: 'Remove product',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 28,
+                                  minHeight: 32,
+                                ),
+                                padding: EdgeInsets.zero,
+                                onPressed: () => _removeProduct(item.product),
+                                icon: const Icon(
+                                  Icons.close,
+                                  size: 17,
+                                  color: AccountCareTheme.red,
+                                ),
                               ),
+                              const SizedBox(width: 4),
+
+                              // Type a quantity directly, such as 55.
+
+                              // Decrease quantity by one.
+                              IconButton(
+                                tooltip: 'Decrease quantity',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 26,
+                                  minHeight: 32,
+                                ),
+                                padding: EdgeInsets.zero,
+                                onPressed: () =>
+                                    _changeQuantity(item.product, -1),
+                                icon: const Icon(Icons.remove, size: 17),
+                              ),
+
+                              // Enter a quantity directly, then press Enter.
+                              SizedBox(
+                                width: 48,
+                                height: 34,
+                                child: TextFormField(
+                                  key: ValueKey(
+                                    '${item.product.id}-${item.quantity}',
+                                  ),
+                                  initialValue: '${item.quantity}',
+                                  textAlign: TextAlign.center,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  style: const TextStyle(fontSize: 13),
+                                  decoration: InputDecoration(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 3,
+                                      vertical: 6,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                  onFieldSubmitted: (value) {
+                                    final quantity = int.tryParse(value);
+
+                                    if (quantity == null || quantity < 1) {
+                                      _showMessage(
+                                        'Enter a quantity of at least 1.',
+                                      );
+                                      return;
+                                    }
+
+                                    if (quantity > item.product.stockQuantity) {
+                                      _showMessage(
+                                        'Only ${item.product.stockQuantity} '
+                                        'units are in stock.',
+                                      );
+                                      return;
+                                    }
+
+                                    final cartIndex = _cart.indexWhere(
+                                      (entry) =>
+                                          entry.product.id == item.product.id,
+                                    );
+                                    if (cartIndex < 0) return;
+
+                                    setState(() {
+                                      _cart[cartIndex] = _cart[cartIndex]
+                                          .copyWith(quantity: quantity);
+                                    });
+                                  },
+                                ),
+                              ),
+
+                              // Increase quantity by one.
+                              IconButton(
+                                tooltip: 'Increase quantity',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 26,
+                                  minHeight: 32,
+                                ),
+                                padding: EdgeInsets.zero,
+                                onPressed: () =>
+                                    _changeQuantity(item.product, 1),
+                                icon: const Icon(Icons.add, size: 17),
+                              ),
+
+                              // Remove the entire product from the cart.
+                              IconButton(
+                                tooltip: 'Remove product',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 26,
+                                  minHeight: 32,
+                                ),
+                                padding: EdgeInsets.zero,
+                                onPressed: () => _removeProduct(item.product),
+                                icon: const Icon(
+                                  Icons.close,
+                                  size: 17,
+                                  color: AccountCareTheme.red,
+                                ),
+                              ),
+
                               const SizedBox(width: 8),
                               SizedBox(
-                                width: 110,
+                                width: 88,
                                 child: Text(
                                   _formatMoney(item.lineTotalMinor),
                                   textAlign: TextAlign.end,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ],
@@ -455,73 +587,54 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                     ),
             ),
 
-            // Payment and customer area
-            Flexible(
+            const Divider(height: 12),
+
+            // These controls scroll independently of the fixed totals.
+            Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (_dueMinor > 0) ...[
-                      const Divider(),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Customer Required',
-                        style: Theme.of(context).textTheme.titleMedium,
+                      const Text(
+                        'Customer',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'This sale has an outstanding balance. '
-                        'Select an existing customer or add a new one.',
-                      ),
-                      const SizedBox(height: 12),
                       TextField(
                         controller: _customerSearchController,
-                        onChanged: (_) {
-                          setState(() {});
-                        },
+                        onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
-                          labelText: 'Search customer',
-                          hintText: 'Search by name or phone',
-                          prefixIcon: const Icon(Icons.search),
+                          isDense: true,
+                          labelText: 'Search by name or phone',
+                          prefixIcon: const Icon(Icons.search, size: 20),
                           suffixIcon: _customerSearchController.text.isEmpty
                               ? null
                               : IconButton(
                                   tooltip: 'Clear search',
                                   onPressed: () {
-                                    setState(() {
-                                      _customerSearchController.clear();
-                                    });
+                                    setState(_customerSearchController.clear);
                                   },
-                                  icon: const Icon(Icons.clear),
+                                  icon: const Icon(Icons.clear, size: 18),
                                 ),
-                          border: const OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(height: 8),
-
                       if (_selectedCustomerId != null)
-                        Builder(
-                          builder: (context) {
-                            Customer? selectedCustomer;
-
-                            for (final customer in customers) {
-                              if (customer.id == _selectedCustomerId) {
-                                selectedCustomer = customer;
-                                break;
-                              }
-                            }
-
-                            if (selectedCustomer == null) {
-                              return const SizedBox.shrink();
-                            }
-
-                            return Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.person),
-                                title: Text(selectedCustomer.name),
-                                subtitle: selectedCustomer.phone == null
+                        ...customers
+                            .where((c) => c.id == _selectedCustomerId)
+                            .map(
+                              (customer) => ListTile(
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.person, size: 20),
+                                title: Text(
+                                  customer.name,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                subtitle: customer.phone == null
                                     ? null
-                                    : Text(selectedCustomer.phone!),
+                                    : Text(customer.phone!),
                                 trailing: IconButton(
                                   tooltip: 'Change customer',
                                   onPressed: () {
@@ -530,13 +643,10 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                       _customerSearchController.clear();
                                     });
                                   },
-                                  icon: const Icon(Icons.close),
+                                  icon: const Icon(Icons.close, size: 18),
                                 ),
                               ),
-                            );
-                          },
-                        ),
-
+                            ),
                       Builder(
                         builder: (context) {
                           final query = _customerSearchController.text
@@ -544,38 +654,44 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                               .toLowerCase();
 
                           if (query.isEmpty) {
-                            return const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 8),
-                              child: Text(
-                                'Start typing to search for a customer.',
-                              ),
-                            );
+                            return const SizedBox.shrink();
                           }
 
                           final matches = customers
                               .where((customer) {
-                                final name = customer.name.toLowerCase();
-                                final phone =
-                                    customer.phone?.toLowerCase() ?? '';
-
-                                return name.contains(query) ||
-                                    phone.contains(query);
+                                return customer.name.toLowerCase().contains(
+                                      query,
+                                    ) ||
+                                    (customer.phone?.toLowerCase() ?? '')
+                                        .contains(query);
                               })
                               .take(5)
                               .toList();
 
                           if (matches.isEmpty) {
                             return const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 8),
-                              child: Text('No matching customer found.'),
+                              padding: EdgeInsets.symmetric(vertical: 6),
+                              child: Text(
+                                'No matching customer found.',
+                                style: TextStyle(fontSize: 12),
+                              ),
                             );
                           }
 
                           return Column(
                             children: matches.map((customer) {
                               return ListTile(
-                                leading: const Icon(Icons.person_outline),
-                                title: Text(customer.name),
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.person_outline,
+                                  size: 20,
+                                ),
+                                title: Text(
+                                  customer.name,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
                                 subtitle: customer.phone == null
                                     ? null
                                     : Text(customer.phone!),
@@ -590,30 +706,22 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                           );
                         },
                       ),
-
-                      const SizedBox(height: 8),
-
                       OutlinedButton.icon(
                         onPressed: () async {
                           final customerId = await _showAddCustomerDialog();
-
-                          if (customerId == null || !mounted) {
-                            return;
-                          }
+                          if (customerId == null || !mounted) return;
 
                           setState(() {
                             _selectedCustomerId = customerId;
                             _customerSearchController.clear();
                           });
                         },
-                        icon: const Icon(Icons.person_add),
+                        icon: const Icon(Icons.person_add, size: 18),
                         label: const Text('Add New Customer'),
                       ),
+                      const SizedBox(height: 8),
                     ],
 
-                    const SizedBox(height: 12),
-
-                    // Discount
                     TextField(
                       controller: _discountController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -621,28 +729,21 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                       ),
                       inputFormatters: [
                         TextInputFormatter.withFunction((oldValue, newValue) {
-                          final text = newValue.text;
-
-                          if (text.isEmpty ||
-                              RegExp(r'^\d*\.?\d{0,2}$').hasMatch(text)) {
-                            return newValue;
-                          }
-
-                          return oldValue;
+                          final value = newValue.text;
+                          return value.isEmpty ||
+                                  RegExp(r'^\d*\.?\d{0,2}$').hasMatch(value)
+                              ? newValue
+                              : oldValue;
                         }),
                       ],
-                      onChanged: (_) {
-                        setState(() {});
-                      },
+                      onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
+                        isDense: true,
                         labelText: 'Discount (PKR)',
-                        border: OutlineInputBorder(),
                       ),
                     ),
+                    const SizedBox(height: 8),
 
-                    const SizedBox(height: 12),
-
-                    // Paid
                     TextField(
                       controller: _paidController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -650,33 +751,27 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                       ),
                       inputFormatters: [
                         TextInputFormatter.withFunction((oldValue, newValue) {
-                          final text = newValue.text;
-
-                          if (text.isEmpty ||
-                              RegExp(r'^\d*\.?\d{0,2}$').hasMatch(text)) {
-                            return newValue;
-                          }
-
-                          return oldValue;
+                          final value = newValue.text;
+                          return value.isEmpty ||
+                                  RegExp(r'^\d*\.?\d{0,2}$').hasMatch(value)
+                              ? newValue
+                              : oldValue;
                         }),
                       ],
-                      onChanged: (_) {
-                        setState(() {});
-                      },
+                      onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
+                        isDense: true,
                         labelText: 'Paid (PKR)',
-                        border: OutlineInputBorder(),
                       ),
                     ),
+                    const SizedBox(height: 8),
 
-                    const SizedBox(height: 12),
-
-                    // Payment method
                     DropdownButtonFormField<String>(
                       initialValue: _paymentMethod,
+                      isDense: true,
                       decoration: const InputDecoration(
+                        isDense: true,
                         labelText: 'Payment Method',
-                        border: OutlineInputBorder(),
                       ),
                       items: const [
                         DropdownMenuItem(value: 'cash', child: Text('Cash')),
@@ -695,13 +790,9 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                         DropdownMenuItem(value: 'other', child: Text('Other')),
                       ],
                       onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-
+                        if (value == null) return;
                         setState(() {
                           _paymentMethod = value;
-
                           if (value == 'cash') {
                             _paymentReferenceController.clear();
                           }
@@ -710,60 +801,45 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                     ),
 
                     if (_paymentMethod != 'cash') ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       TextField(
                         controller: _paymentReferenceController,
-                        textInputAction: TextInputAction.done,
                         decoration: const InputDecoration(
-                          labelText: 'Payment Reference',
-                          hintText: 'Optional transaction/reference number',
-                          border: OutlineInputBorder(),
+                          isDense: true,
+                          labelText: 'Payment Reference (optional)',
                         ),
                       ),
                     ],
-
-                    const SizedBox(height: 16),
-
-                    // Summary
-                    _summaryRow('Subtotal', _formatMoney(_subtotalMinor)),
-                    const SizedBox(height: 6),
-                    _summaryRow('Discount', _formatMoney(_discountMinor)),
-                    const SizedBox(height: 6),
-                    _summaryRow('Total', _formatMoney(_totalMinor), bold: true),
-                    const SizedBox(height: 6),
-                    _summaryRow('Paid', _formatMoney(_paidMinor)),
-                    const SizedBox(height: 6),
-                    _summaryRow(
-                      _changeMinor > 0 ? 'Change to return' : 'Due',
-                      _formatMoney(_changeMinor > 0 ? _changeMinor : _dueMinor),
-                      bold: true,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Complete sale
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _isSaving ? null : _completeSale,
-                        icon: _isSaving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.point_of_sale),
-                        label: Text(
-                          _isSaving ? 'Completing Sale...' : 'Complete Sale',
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                   ],
                 ),
+              ),
+            ),
+
+            // Totals and checkout remain visible while the cart scrolls.
+            const Divider(height: 12),
+            _summaryRow('Subtotal', _formatMoney(_subtotalMinor)),
+            _summaryRow('Discount', _formatMoney(_discountMinor)),
+            _summaryRow('Total', _formatMoney(_totalMinor), bold: true),
+            _summaryRow('Paid', _formatMoney(_paidMinor)),
+            _summaryRow(
+              _changeMinor > 0 ? 'Change to return' : 'Due',
+              _formatMoney(_changeMinor > 0 ? _changeMinor : _dueMinor),
+              bold: true,
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _isSaving ? null : _completeSale,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.point_of_sale),
+                label: Text(_isSaving ? 'Completing Sale...' : 'Complete Sale'),
               ),
             ),
           ],
@@ -774,15 +850,21 @@ class _SalesPageState extends ConsumerState<SalesPage> {
 
   Widget _summaryRow(String label, String value, {bool bold = false}) {
     final style = bold
-        ? const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
-        : null;
+        ? const TextStyle(
+            color: AccountCareTheme.text,
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
+          )
+        : const TextStyle(color: AccountCareTheme.muted, fontSize: 13);
 
-    return Row(
-      children: [
-        Text(label, style: style),
-        const Spacer(),
-        Text(value, style: style),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: style)),
+          Text(value, style: style),
+        ],
+      ),
     );
   }
 
@@ -970,9 +1052,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                 builder: (context, constraints) {
                   // Keep the original desktop POS layout whenever
                   // the content area has enough room.
-                  final desktopLayout =
-                      constraints.maxWidth >= 900 &&
-                      constraints.maxHeight >= 600;
+                  final desktopLayout = constraints.maxWidth >= 700;
 
                   if (desktopLayout) {
                     return Padding(

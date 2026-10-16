@@ -1,15 +1,15 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' hide Column;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:drift/drift.dart' hide Column;
 
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/business_provider.dart';
 import '../../../core/providers/customer_provider.dart';
-import '../../../core/providers/service_providers.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/service_providers.dart';
 
 class UdhaarPage extends ConsumerStatefulWidget {
   const UdhaarPage({super.key});
@@ -23,6 +23,11 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
 
   String _searchQuery = '';
   Customer? _selectedCustomer;
+
+  Future<List<_CustomerDebt>>? _debtsFuture;
+  String? _debtsFutureBusinessId;
+  String? _debtsFutureCustomerSignature;
+
   bool _isExportingDebtors = false;
   final Set<String> _exportingCustomerIds = {};
 
@@ -35,6 +40,12 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
   String _money(int minor) {
     final amount = (minor.abs() / 100).toStringAsFixed(2);
     return '${minor < 0 ? '-' : ''}Rs. $amount';
+  }
+
+  void _resetDebtsFuture() {
+    _debtsFuture = null;
+    _debtsFutureBusinessId = null;
+    _debtsFutureCustomerSignature = null;
   }
 
   Future<void> _exportAllDebtors({
@@ -162,9 +173,14 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
         customerId: customer.id,
       );
 
+      final safeCustomerName = customer.name.replaceAll(
+        RegExp(r'[^\w-]+'),
+        '_',
+      );
+
       final saveLocation = await getSaveLocation(
         suggestedName:
-            'account_care_${customer.name.replaceAll(RegExp(r'[^\w-]+'), '_')}_history_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx',
+            'account_care_${safeCustomerName}_history_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx',
         acceptedTypeGroups: [
           const XTypeGroup(label: 'Excel workbook', extensions: ['xlsx']),
         ],
@@ -216,8 +232,8 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
           IconButton(
             tooltip: 'Refresh',
             onPressed: () {
+              setState(_resetDebtsFuture);
               ref.invalidate(customerListProvider(false));
-              setState(() {});
             },
             icon: const Icon(Icons.refresh),
           ),
@@ -277,14 +293,25 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                     );
                   }
 
-                  return FutureBuilder<List<_CustomerDebt>>(
-                    key: ValueKey(
-                      '${businessId}_${customers.length}_${customers.map((c) => c.id).join(",")}',
-                    ),
-                    future: _loadDebts(
+                  // Recalculate balances only when the business or customer
+                  // list changes, not whenever the page rebuilds.
+                  final customerSignature = customers
+                      .map((customer) => customer.id)
+                      .join(',');
+
+                  if (_debtsFuture == null ||
+                      _debtsFutureBusinessId != businessId ||
+                      _debtsFutureCustomerSignature != customerSignature) {
+                    _debtsFutureBusinessId = businessId;
+                    _debtsFutureCustomerSignature = customerSignature;
+                    _debtsFuture = _loadDebts(
                       customers: customers,
                       businessId: businessId,
-                    ),
+                    );
+                  }
+
+                  return FutureBuilder<List<_CustomerDebt>>(
+                    future: _debtsFuture,
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
@@ -292,10 +319,22 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
 
                       if (snapshot.hasError) {
                         return Center(
-                          child: Text(
-                            'Could not calculate customer balances:\n'
-                            '${snapshot.error}',
-                            textAlign: TextAlign.center,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Could not calculate customer balances:\n'
+                                '${snapshot.error}',
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              FilledButton(
+                                onPressed: () {
+                                  setState(_resetDebtsFuture);
+                                },
+                                child: const Text('Retry'),
+                              ),
+                            ],
                           ),
                         );
                       }
@@ -317,9 +356,7 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
 
                       final totalDebt = allDebtors.fold<int>(
                         0,
-                        (sum, debt) =>
-                            sum +
-                            (debt.balanceMinor > 0 ? debt.balanceMinor : 0),
+                        (sum, debt) => sum + debt.balanceMinor,
                       );
 
                       final selectedCustomer = allDebtors
@@ -328,6 +365,7 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                           )
                           .map((debt) => debt.customer)
                           .firstOrNull;
+
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -365,7 +403,6 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                     children: [
                                       Text('${allDebtors.length} customers'),
                                       const SizedBox(width: 12),
-
                                       FilledButton.icon(
                                         onPressed: _isExportingDebtors
                                             ? null
@@ -404,15 +441,14 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                               ),
                             ),
                           ),
-
                           const SizedBox(height: 16),
                           Expanded(
                             child: Flex(
-  direction: MediaQuery.sizeOf(context).width < 1100
-      ? Axis.vertical
-      : Axis.horizontal,
-  crossAxisAlignment: CrossAxisAlignment.stretch,
-  children: [
+                              direction: MediaQuery.sizeOf(context).width < 1100
+                                  ? Axis.vertical
+                                  : Axis.horizontal,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
                                 // Left panel: customer list.
                                 Expanded(
                                   flex: 2,
@@ -435,6 +471,11 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                               final selected =
                                                   _selectedCustomer?.id ==
                                                   debt.customer.id;
+                                              final isExporting =
+                                                  _exportingCustomerIds
+                                                      .contains(
+                                                        debt.customer.id,
+                                                      );
 
                                               return ListTile(
                                                 selected: selected,
@@ -451,20 +492,13 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                                   debt.customer.phone ??
                                                       'No phone',
                                                 ),
-
                                                 trailing: Row(
                                                   mainAxisSize:
                                                       MainAxisSize.min,
                                                   children: [
                                                     IconButton(
                                                       tooltip: 'Export customer history',
-                                                      onPressed:
-                                                          _exportingCustomerIds
-                                                              .contains(
-                                                                debt
-                                                                    .customer
-                                                                    .id,
-                                                              )
+                                                      onPressed: isExporting
                                                           ? null
                                                           : () =>
                                                                 _exportCustomerHistory(
@@ -473,13 +507,7 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                                                   businessId:
                                                                       businessId,
                                                                 ),
-                                                      icon:
-                                                          _exportingCustomerIds
-                                                              .contains(
-                                                                debt
-                                                                    .customer
-                                                                    .id,
-                                                              )
+                                                      icon: isExporting
                                                           ? const SizedBox(
                                                               width: 18,
                                                               height: 18,
@@ -503,7 +531,6 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                                     ),
                                                   ],
                                                 ),
-
                                                 onTap: () {
                                                   setState(() {
                                                     _selectedCustomer =
@@ -515,11 +542,15 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                           ),
                                         ),
                                 ),
-                               SizedBox(
-  width: MediaQuery.sizeOf(context).width < 1100 ? 0 : 16,
-  height: MediaQuery.sizeOf(context).width < 1100 ? 12 : 0,
-),
-
+                                SizedBox(
+                                  width: MediaQuery.sizeOf(context).width < 1100
+                                      ? 0
+                                      : 16,
+                                  height:
+                                      MediaQuery.sizeOf(context).width < 1100
+                                      ? 12
+                                      : 0,
+                                ),
                                 // Right panel: selected customer's history.
                                 Expanded(
                                   flex: 3,
@@ -553,7 +584,7 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                         )
                                       : SingleChildScrollView(
                                           child: _CustomerLedgerPanel(
-                                            customer: _selectedCustomer!,
+                                            customer: selectedCustomer,
                                             businessId: businessId,
                                             money: _money,
                                           ),
