@@ -166,7 +166,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
     final newQuantity = existing.quantity + change;
 
     if (newQuantity < 1) {
-      _showMessage('Quantity cannot be less than 1. Use × to remove it.');
+      _showMessage('Quantity cannot be less than 1. Use Ã— to remove it.');
       return;
     }
 
@@ -298,17 +298,76 @@ class _SalesPageState extends ConsumerState<SalesPage> {
     final filteredProducts = _filteredProducts(products);
 
     return Card(
+      color: AccountCareTheme.card,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AccountCareTheme.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Products',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: AccountCareTheme.text,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AccountCareTheme.blue.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.inventory_2_outlined,
+                    color: AccountCareTheme.blue,
+                    size: 21,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select Products',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: AccountCareTheme.text,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${filteredProducts.length} products available to browse',
+                        style: const TextStyle(
+                          color: AccountCareTheme.muted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AccountCareTheme.blue.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${_cart.length} in cart',
+                    style: const TextStyle(
+                      color: AccountCareTheme.blue,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             TextField(
@@ -318,50 +377,237 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                   _searchQuery = value;
                 });
               },
-              decoration: const InputDecoration(
-                labelText: 'Search products',
-                hintText: 'Search by name or SKU',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                hintText: 'Search product name or SKU...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                        icon: const Icon(Icons.close, size: 18),
+                      ),
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surface,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 13,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AccountCareTheme.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AccountCareTheme.border),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Expanded(
               child: filteredProducts.isEmpty
-                  ? const Center(child: Text('No products found.'))
-                  : ListView.separated(
-                      itemCount: filteredProducts.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final product = filteredProducts[index];
-
-                        final cartItem = _findCartItem(product.id);
-
-                        final available =
-                            product.stockQuantity - (cartItem?.quantity ?? 0);
-
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 4,
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 42,
+                            color: AccountCareTheme.muted.withValues(
+                              alpha: 0.6,
+                            ),
                           ),
-                          title: Text(
-                            product.name,
+                          const SizedBox(height: 10),
+                          Text(
+                            _searchQuery.isEmpty
+                                ? 'No products available'
+                                : 'No matching products',
                             style: const TextStyle(
                               color: AccountCareTheme.text,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          subtitle: Text(
-                            '${_formatMoney(product.salePriceMinor)}'
-                            '  |  Stock: ${product.stockQuantity}',
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Try another search term.',
+                            style: TextStyle(
+                              color: AccountCareTheme.muted,
+                              fontSize: 12,
+                            ),
                           ),
-                          trailing: FilledButton(
-                            onPressed: available > 0
-                                ? () => _addProduct(product)
-                                : null,
-                            child: const Text('Add'),
-                          ),
+                        ],
+                      ),
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final columns = constraints.maxWidth >= 520 ? 3 : 2;
+
+                        return GridView.builder(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          itemCount: filteredProducts.length,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: columns,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                                mainAxisExtent: 166,
+                              ),
+                          itemBuilder: (context, index) {
+                            final product = filteredProducts[index];
+                            final cartItem = _findCartItem(product.id);
+                            final available =
+                                product.stockQuantity -
+                                (cartItem?.quantity ?? 0);
+                            final inCart = cartItem != null;
+                            final canAdd = available > 0;
+
+                            return Container(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                border: Border.all(
+                                  color: inCart
+                                      ? AccountCareTheme.blue.withValues(
+                                          alpha: 0.55,
+                                        )
+                                      : AccountCareTheme.border,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(11),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 32,
+                                          height: 32,
+                                          decoration: BoxDecoration(
+                                            color: AccountCareTheme.blue
+                                                .withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.inventory_2_outlined,
+                                            color: AccountCareTheme.blue,
+                                            size: 18,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        if (inCart)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AccountCareTheme.blue
+                                                  .withValues(alpha: 0.10),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              '×${cartItem.quantity}',
+                                              style: const TextStyle(
+                                                color: AccountCareTheme.blue,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 9),
+                                    Text(
+                                      product.name,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AccountCareTheme.text,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _formatMoney(product.salePriceMinor),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AccountCareTheme.blue,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 7),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            canAdd
+                                                ? '$available in stock'
+                                                : 'Out of stock',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: canAdd
+                                                  ? AccountCareTheme.muted
+                                                  : AccountCareTheme.red,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        SizedBox(
+                                          height: 30,
+                                          child: FilledButton(
+                                            onPressed: canAdd
+                                                ? () => _addProduct(product)
+                                                : null,
+                                            style: FilledButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                  ),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(7),
+                                              ),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.add, size: 15),
+                                                SizedBox(width: 3),
+                                                Text(
+                                                  'Add',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
