@@ -19,25 +19,33 @@ class PaymentsPage extends ConsumerStatefulWidget {
 }
 
 class _PaymentsPageState extends ConsumerState<PaymentsPage> {
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
   Future<List<_PaymentRow>>? _paymentsFuture;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _loadPaymentsFuture();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _loadPaymentsFuture() {
+    final businessId = ref.read(activeBusinessIdProvider);
+    if (businessId == null || businessId.isEmpty) {
+      _paymentsFuture = Future.value([]);
+      return;
+    }
+    _paymentsFuture = _loadPayments(ref.read(databaseProvider), businessId);
   }
 
   void _refresh() {
-    final businessId = ref.read(activeBusinessIdProvider);
-    if (businessId == null || businessId.isEmpty) {
-      setState(() => _paymentsFuture = Future.value([]));
-      return;
-    }
-
-    final database = ref.read(databaseProvider);
-    setState(() {
-      _paymentsFuture = _loadPayments(database, businessId);
-    });
+    setState(_loadPaymentsFuture);
   }
 
   Future<List<_PaymentRow>> _loadPayments(
@@ -52,15 +60,12 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                 (p) => OrderingTerm.desc(p.createdAt),
               ]))
             .get();
-
     final customers = await (database.select(
       database.customers,
     )..where((c) => c.businessId.equals(businessId))).get();
-
     final names = {
       for (final customer in customers) customer.id: customer.name,
     };
-
     return payments
         .map(
           (payment) => _PaymentRow(
@@ -71,47 +76,31 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
         .toList();
   }
 
-  String _money(int minor) {
-    final value = minor / 100;
-    return 'Rs. ${value.toStringAsFixed(2)}';
-  }
+  String _money(int minor) => 'Rs. ${(minor / 100).toStringAsFixed(2)}';
 
   int? _parseAmountMinor(String input) {
     final text = input.trim();
-
-    if (!RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(text)) {
-      return null;
-    }
-
+    if (!RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(text)) return null;
     final parts = text.split('.');
     final rupees = int.tryParse(parts[0]);
     final paisa = parts.length == 1
         ? 0
         : int.tryParse(parts[1].padRight(2, '0'));
-
-    if (rupees == null || paisa == null || rupees > 90000000000000) {
-      return null;
-    }
-
+    if (rupees == null || paisa == null || rupees > 90000000000000) return null;
     final minor = rupees * 100 + paisa;
-    if (minor > 9000000000000000) return null;
-
-    return minor;
+    return minor > 9000000000000000 ? null : minor;
   }
 
   String _date(DateTime date) {
     final local = date.toLocal();
-    final d = local.day.toString().padLeft(2, '0');
-    final m = local.month.toString().padLeft(2, '0');
-    return '$d/$m/${local.year} '
-        '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}';
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    return '$day/$month/${local.year}  ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
   Future<void> _showRecordPaymentDialog() async {
     final businessId = ref.read(activeBusinessIdProvider);
     final userId = ref.read(activeUserIdProvider);
-
     if (businessId == null || businessId.isEmpty) {
       _message('Select a business before recording a payment.');
       return;
@@ -124,7 +113,6 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
     try {
       final database = ref.read(databaseProvider);
       final ledgerService = ref.read(customerLedgerServiceProvider);
-
       final activeCustomers =
           await (database.select(database.customers)
                 ..where(
@@ -133,33 +121,23 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                 )
                 ..orderBy([(c) => OrderingTerm.asc(c.name)]))
               .get();
-
-      final customersWithOutstanding = <Customer>[];
-
+      final customers = <Customer>[];
       for (final customer in activeCustomers) {
-        final outstandingMinor = await ledgerService.getOutstandingBalance(
+        final balance = await ledgerService.getOutstandingBalance(
           businessId: businessId,
           customerId: customer.id,
         );
-
-        if (outstandingMinor > 0) {
-          customersWithOutstanding.add(customer);
-        }
+        if (balance > 0) customers.add(customer);
       }
-
       if (!mounted) return;
-
-      if (customersWithOutstanding.isEmpty) {
+      if (customers.isEmpty) {
         _message('No active customers currently have outstanding dues.');
         return;
       }
 
-      final customers = customersWithOutstanding;
-
       final formKey = GlobalKey<FormState>();
       final amountController = TextEditingController();
       final referenceController = TextEditingController();
-
       String? selectedCustomerId;
       String method = 'Cash';
       int balanceMinor = 0;
@@ -171,287 +149,257 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
       try {
         final result = await showDialog<bool>(
           context: context,
-          builder: (dialogContext) {
-            return StatefulBuilder(
-              builder: (context, setDialogState) {
-                Future<void> updateBalance(String? customerId) async {
-                  final requestId = ++balanceRequestId;
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              Future<void> updateBalance(String? customerId) async {
+                final requestId = ++balanceRequestId;
+                setDialogState(() {
+                  selectedCustomerId = customerId;
+                  loadingBalance = customerId != null;
+                  balanceMinor = 0;
+                  balanceLoadFailed = false;
+                });
+                if (customerId == null) return;
+                try {
+                  final balance = await ref
+                      .read(customerLedgerServiceProvider)
+                      .getOutstandingBalance(
+                        businessId: businessId,
+                        customerId: customerId,
+                      );
+                  if (!context.mounted || requestId != balanceRequestId) return;
                   setDialogState(() {
-                    selectedCustomerId = customerId;
-                    loadingBalance = customerId != null;
-                    balanceMinor = 0;
+                    balanceMinor = balance;
+                    loadingBalance = false;
                     balanceLoadFailed = false;
                   });
-
-                  if (customerId == null) return;
-
-                  try {
-                    final balance = await ref
-                        .read(customerLedgerServiceProvider)
-                        .getOutstandingBalance(
-                          businessId: businessId,
-                          customerId: customerId,
-                        );
-
-                    if (!context.mounted || requestId != balanceRequestId) {
-                      return;
-                    }
-
-                    setDialogState(() {
-                      balanceMinor = balance;
-                      loadingBalance = false;
-                      balanceLoadFailed = false;
-                    });
-                  } catch (_) {
-                    if (!context.mounted || requestId != balanceRequestId) {
-                      return;
-                    }
-
-                    setDialogState(() {
-                      loadingBalance = false;
-                      balanceLoadFailed = true;
-                    });
-                  }
+                } catch (_) {
+                  if (!context.mounted || requestId != balanceRequestId) return;
+                  setDialogState(() {
+                    loadingBalance = false;
+                    balanceLoadFailed = true;
+                  });
                 }
+              }
 
-                return PopScope(
-                  canPop: !savingDialog,
-                  child: AlertDialog(
-                    title: const Text('Record Customer Payment'),
-                    content: SizedBox(
-                      width: 440,
-                      child: Form(
-                        key: formKey,
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              DropdownButtonFormField<String>(
-                                initialValue: selectedCustomerId,
-                                isExpanded: true,
-                                decoration: const InputDecoration(
-                                  labelText: 'Customer',
-                                  border: OutlineInputBorder(),
-                                ),
-                                items: customers
-                                    .map(
-                                      (customer) => DropdownMenuItem<String>(
-                                        value: customer.id,
-                                        child: Text(
-                                          customer.name,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+              return PopScope(
+                canPop: !savingDialog,
+                child: AlertDialog(
+                  title: const Text('Record customer payment'),
+                  content: SizedBox(
+                    width: 440,
+                    child: Form(
+                      key: formKey,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            DropdownButtonFormField<String>(
+                              initialValue: selectedCustomerId,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Customer',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: customers
+                                  .map(
+                                    (customer) => DropdownMenuItem<String>(
+                                      value: customer.id,
+                                      child: Text(
+                                        customer.name,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    )
-                                    .toList(),
-                                onChanged: savingDialog
-                                    ? null
-                                    : (id) => updateBalance(id),
-                                validator: (value) =>
-                                    value == null ? 'Select a customer.' : null,
-                              ),
-                              const SizedBox(height: 16),
-                              Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text('Current outstanding'),
-                                      const SizedBox(height: 6),
-                                      if (loadingBalance)
-                                        const LinearProgressIndicator()
-                                      else if (balanceLoadFailed)
-                                        const Text(
-                                          'Could not load the balance. '
-                                          'Please select the customer again.',
-                                        )
-                                      else
-                                        Text(
-                                          _money(balanceMinor),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleLarge
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: amountController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
                                     ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Amount (PKR)',
-                                  hintText: 'e.g. 1500 or 1500.50',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  final amountMinor = _parseAmountMinor(
-                                    value ?? '',
-                                  );
-
-                                  if (amountMinor == null || amountMinor <= 0) {
-                                    return 'Enter a valid amount with up to '
-                                        '2 decimal places.';
-                                  }
-
-                                  if (amountMinor > balanceMinor) {
-                                    return 'Amount exceeds the outstanding '
-                                        'balance.';
-                                  }
-
-                                  return null;
-                                },
+                                  )
+                                  .toList(),
+                              onChanged: savingDialog ? null : updateBalance,
+                              validator: (value) =>
+                                  value == null ? 'Select a customer.' : null,
+                            ),
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer
+                                    .withValues(alpha: 0.45),
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                initialValue: method,
-                                decoration: const InputDecoration(
-                                  labelText: 'Payment method',
-                                  border: OutlineInputBorder(),
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'Cash',
-                                    child: Text('Cash'),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Current outstanding',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge,
                                   ),
-                                  DropdownMenuItem(
-                                    value: 'Bank Transfer',
-                                    child: Text('Bank Transfer'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'Card',
-                                    child: Text('Card'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'Other',
-                                    child: Text('Other'),
-                                  ),
+                                  const SizedBox(height: 6),
+                                  if (loadingBalance)
+                                    const LinearProgressIndicator()
+                                  else if (balanceLoadFailed)
+                                    const Text(
+                                      'Could not load the balance. Please select the customer again.',
+                                    )
+                                  else
+                                    Text(
+                                      _money(balanceMinor),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
                                 ],
-                                onChanged: savingDialog
-                                    ? null
-                                    : (value) {
-                                        if (value != null) {
-                                          setDialogState(() => method = value);
-                                        }
-                                      },
                               ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: referenceController,
-                                maxLength: 200,
-                                decoration: const InputDecoration(
-                                  labelText: 'Reference (optional)',
-                                  hintText: 'Receipt or transaction number',
-                                  border: OutlineInputBorder(),
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: amountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'Amount (PKR)',
+                                hintText: 'e.g. 1500 or 1500.50',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (value) {
+                                final amount = _parseAmountMinor(value ?? '');
+                                if (amount == null || amount <= 0)
+                                  return 'Enter a valid amount with up to 2 decimal places.';
+                                if (amount > balanceMinor)
+                                  return 'Amount exceeds the outstanding balance.';
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: method,
+                              decoration: const InputDecoration(
+                                labelText: 'Payment method',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'Cash',
+                                  child: Text('Cash'),
                                 ),
+                                DropdownMenuItem(
+                                  value: 'Bank Transfer',
+                                  child: Text('Bank Transfer'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Card',
+                                  child: Text('Card'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Other',
+                                  child: Text('Other'),
+                                ),
+                              ],
+                              onChanged: savingDialog
+                                  ? null
+                                  : (value) {
+                                      if (value != null)
+                                        setDialogState(() => method = value);
+                                    },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: referenceController,
+                              maxLength: 200,
+                              decoration: const InputDecoration(
+                                labelText: 'Reference (optional)',
+                                hintText: 'Receipt or transaction number',
+                                border: OutlineInputBorder(),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: savingDialog
-                            ? null
-                            : () => Navigator.pop(dialogContext, false),
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: savingDialog
-                            ? null
-                            : () async {
-                                if (savingDialog ||
-                                    loadingBalance ||
-                                    balanceLoadFailed ||
-                                    selectedCustomerId == null ||
-                                    !formKey.currentState!.validate()) {
-                                  return;
-                                }
-
-                                final amountMinor = _parseAmountMinor(
-                                  amountController.text,
-                                );
-
-                                if (amountMinor == null ||
-                                    amountMinor <= 0 ||
-                                    amountMinor > balanceMinor) {
-                                  return;
-                                }
-
-                                setDialogState(() => savingDialog = true);
-
-                                try {
-                                  await ref
-                                      .read(paymentServiceProvider)
-                                      .recordPayment(
-                                        businessId: businessId,
-                                        customerId: selectedCustomerId!,
-                                        userId: userId,
-                                        paymentId: const Uuid().v4(),
-                                        amountMinor: amountMinor,
-                                        paymentMethod: method,
-                                        reference: referenceController.text,
-                                        paidAt: DateTime.now(),
-                                      );
-
-                                  if (dialogContext.mounted) {
-                                    Navigator.pop(dialogContext, true);
-                                  }
-                                } catch (error) {
-                                  if (!dialogContext.mounted) return;
-
-                                  setDialogState(() => savingDialog = false);
-
-                                  ScaffoldMessenger.of(dialogContext)
-                                      .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Could not record payment: $error',
-                                          ),
-                                        ),
-                                      );
-                                }
-                              },
-                        icon: savingDialog
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.save_outlined),
-                        label: Text(
-                          savingDialog ? 'Saving...' : 'Record Payment',
-                        ),
-                      ),
-                    ],
                   ),
-                );
-              },
-            );
-          },
+                  actions: [
+                    TextButton(
+                      onPressed: savingDialog
+                          ? null
+                          : () => Navigator.pop(dialogContext, false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: savingDialog
+                          ? null
+                          : () async {
+                              if (savingDialog ||
+                                  loadingBalance ||
+                                  balanceLoadFailed ||
+                                  selectedCustomerId == null ||
+                                  !formKey.currentState!.validate())
+                                return;
+                              final amount = _parseAmountMinor(
+                                amountController.text,
+                              );
+                              if (amount == null ||
+                                  amount <= 0 ||
+                                  amount > balanceMinor)
+                                return;
+                              setDialogState(() => savingDialog = true);
+                              try {
+                                await ref
+                                    .read(paymentServiceProvider)
+                                    .recordPayment(
+                                      businessId: businessId,
+                                      customerId: selectedCustomerId!,
+                                      userId: userId,
+                                      paymentId: const Uuid().v4(),
+                                      amountMinor: amount,
+                                      paymentMethod: method,
+                                      reference: referenceController.text,
+                                      paidAt: DateTime.now(),
+                                    );
+                                if (dialogContext.mounted)
+                                  Navigator.pop(dialogContext, true);
+                              } catch (error) {
+                                if (!dialogContext.mounted) return;
+                                setDialogState(() => savingDialog = false);
+                                ScaffoldMessenger.of(dialogContext)
+                                    .showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Could not record payment: $error',
+                                        ),
+                                      ),
+                                    );
+                              }
+                            },
+                      icon: savingDialog
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.check_circle_outline),
+                      label: Text(
+                        savingDialog ? 'Saving...' : 'Record payment',
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         );
-
         if (result == true && mounted) {
           _refresh();
-
           ref.invalidate(dashboardProvider);
           ref.invalidate(customerListProvider(false));
           ref.invalidate(salesReportProvider);
           ref.invalidate(topSellingProductsProvider);
-
           _message('Payment recorded successfully.');
         }
       } finally {
@@ -459,9 +407,7 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
         referenceController.dispose();
       }
     } catch (error) {
-      if (mounted) {
-        _message('Could not prepare the payment form: $error');
-      }
+      if (mounted) _message('Could not prepare the payment form: $error');
     }
   }
 
@@ -474,45 +420,27 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
   @override
   Widget build(BuildContext context) {
     final businessId = ref.watch(activeBusinessIdProvider);
-
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     ref.listen(activeBusinessIdProvider, (previous, next) {
-      if (previous != next) {
-        _refresh();
-      }
+      if (previous != next) _refresh();
     });
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Payments'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh payment history',
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: _showRecordPaymentDialog,
-            icon: const Icon(Icons.add),
-            label: const Text('Record Payment'),
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
       body: businessId == null || businessId.isEmpty
           ? const Center(child: Text('Select a business to view payments.'))
           : FutureBuilder<List<_PaymentRow>>(
               future: _paymentsFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting)
                   return const Center(child: CircularProgressIndicator());
-                }
-
                 if (snapshot.hasError) {
                   return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        const Icon(Icons.error_outline, size: 40),
+                        const SizedBox(height: 12),
                         const Text('Could not load payment history.'),
                         const SizedBox(height: 8),
                         FilledButton(
@@ -524,99 +452,378 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                   );
                 }
 
-                final rows = snapshot.data ?? [];
-                final totalMinor = rows.fold<int>(
+                final allRows = snapshot.data ?? [];
+                final query = _searchQuery.trim().toLowerCase();
+                final rows = allRows.where((row) {
+                  return row.customerName.toLowerCase().contains(query) ||
+                      row.payment.paymentMethod.toLowerCase().contains(query) ||
+                      (row.payment.reference ?? '').toLowerCase().contains(
+                        query,
+                      );
+                }).toList();
+                final totalMinor = allRows.fold<int>(
                   0,
                   (sum, row) => sum + row.payment.amountMinor,
                 );
+                final visibleTotalMinor = rows.fold<int>(
+                  0,
+                  (sum, row) => sum + row.payment.amountMinor,
+                );
+                final uniqueCustomers = allRows
+                    .map((row) => row.payment.customerId)
+                    .toSet()
+                    .length;
 
-                if (rows.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.payments_outlined, size: 48),
-                        const SizedBox(height: 12),
-                        const Text('No payments recorded yet.'),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: _showRecordPaymentDialog,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Record first payment'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: Wrap(
-                            spacing: 36,
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 720;
+                    final horizontalPadding = compact ? 14.0 : 22.0;
+                    final contentWidth =
+                        constraints.maxWidth - horizontalPadding * 2;
+                    final metricGap = 12.0;
+                    final metricWidth = (contentWidth - metricGap * 2) / 3;
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.all(horizontalPadding),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: colors.primary.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.payments_outlined,
+                                  color: colors.primary,
+                                  size: 23,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Payments',
+                                      style: theme.textTheme.headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: -0.4,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      'Track customer collections and payment history.',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (!compact) ...[
+                                IconButton(
+                                  tooltip: 'Refresh payment history',
+                                  onPressed: _refresh,
+                                  icon: const Icon(Icons.refresh),
+                                ),
+                                const SizedBox(width: 6),
+                                FilledButton.icon(
+                                  onPressed: _showRecordPaymentDialog,
+                                  icon: const Icon(Icons.add, size: 18),
+                                  label: const Text('Record payment'),
+                                ),
+                              ] else ...[
+                                IconButton(
+                                  tooltip: 'Refresh payment history',
+                                  onPressed: _refresh,
+                                  icon: const Icon(Icons.refresh),
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (compact) ...[
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton.icon(
+                                onPressed: _showRecordPaymentDialog,
+                                icon: const Icon(Icons.add, size: 18),
+                                label: const Text('Record payment'),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          Wrap(
+                            spacing: metricGap,
                             runSpacing: 12,
                             children: [
-                              _SummaryItem(
-                                label: 'Payments recorded',
-                                value: rows.length.toString(),
-                              ),
-                              _SummaryItem(
+                              _MetricCard(
+                                icon: Icons.account_balance_wallet_outlined,
                                 label: 'Total received',
                                 value: _money(totalMinor),
+                                helper: 'All recorded payments',
+                                accent: colors.primary,
+                                width: compact ? contentWidth : metricWidth,
+                              ),
+                              _MetricCard(
+                                icon: Icons.receipt_long_outlined,
+                                label: 'Payments recorded',
+                                value: allRows.length.toString(),
+                                helper: 'Transaction count',
+                                accent: const Color(0xFF16856B),
+                                width: compact ? contentWidth : metricWidth,
+                              ),
+                              _MetricCard(
+                                icon: Icons.people_alt_outlined,
+                                label: 'Customers paid',
+                                value: uniqueCustomers.toString(),
+                                helper: 'Unique customers',
+                                accent: const Color(0xFF9A6A12),
+                                width: compact ? contentWidth : metricWidth,
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            columns: const [
-                              DataColumn(label: Text('Date & Time')),
-                              DataColumn(label: Text('Customer')),
-                              DataColumn(label: Text('Amount')),
-                              DataColumn(label: Text('Method')),
-                              DataColumn(label: Text('Reference')),
-                            ],
-                            rows: rows.map((row) {
-                              final payment = row.payment;
-                              return DataRow(
-                                cells: [
-                                  DataCell(Text(_date(payment.paidAt))),
-                                  DataCell(Text(row.customerName)),
-                                  DataCell(
-                                    Text(
-                                      _money(payment.amountMinor),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
+                          const SizedBox(height: 20),
+                          Card(
+                            clipBehavior: Clip.antiAlias,
+                            child: Padding(
+                              padding: EdgeInsets.all(compact ? 12 : 18),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Payment history',
+                                              style: theme.textTheme.titleLarge
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              '${rows.length} of ${allRows.length} transactions',
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        colors.onSurfaceVariant,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (!compact)
+                                        Text(
+                                          'Showing newest first',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: colors.onSurfaceVariant,
+                                              ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                  TextField(
+                                    controller: _searchController,
+                                    onChanged: (value) =>
+                                        setState(() => _searchQuery = value),
+                                    decoration: InputDecoration(
+                                      hintText: 'Search customer, method or reference',
+                                      prefixIcon: const Icon(Icons.search),
+                                      suffixIcon: _searchQuery.isEmpty
+                                          ? null
+                                          : IconButton(
+                                              tooltip: 'Clear search',
+                                              onPressed: () {
+                                                _searchController.clear();
+                                                setState(
+                                                  () => _searchQuery = '',
+                                                );
+                                              },
+                                              icon: const Icon(Icons.close),
+                                            ),
+                                      filled: true,
+                                      isDense: true,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide.none,
                                       ),
                                     ),
                                   ),
-                                  DataCell(Text(payment.paymentMethod)),
-                                  DataCell(
-                                    Text(
-                                      payment.reference?.isNotEmpty == true
-                                          ? payment.reference!
-                                          : '—',
+                                  const SizedBox(height: 12),
+                                  if (allRows.isEmpty)
+                                    _EmptyPayments(
+                                      onRecord: _showRecordPaymentDialog,
+                                    )
+                                  else if (rows.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 36,
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Icon(Icons.search_off, size: 38),
+                                          SizedBox(height: 10),
+                                          Text(
+                                            'No payments match your search.',
+                                          ),
+                                          SizedBox(height: 4),
+                                          Text(
+                                            'Try a different customer, method or reference.',
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else ...[
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: colors.surfaceContainerHighest
+                                            .withValues(alpha: 0.55),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            flex: 4,
+                                            child: Text(
+                                              'CUSTOMER / DATE',
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: 0.5,
+                                                  ),
+                                            ),
+                                          ),
+                                          if (!compact)
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                'METHOD',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                              ),
+                                            ),
+                                          if (!compact)
+                                            Expanded(
+                                              flex: 3,
+                                              child: Text(
+                                                'REFERENCE',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                              ),
+                                            ),
+                                          SizedBox(
+                                            width: compact ? 112 : 140,
+                                            child: Align(
+                                              alignment: Alignment.centerRight,
+                                              child: Text(
+                                                'AMOUNT',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
+                                    ...rows.map(
+                                      (row) => _PaymentHistoryTile(
+                                        row: row,
+                                        compact: compact,
+                                        date: _date(row.payment.paidAt),
+                                        money: _money,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: colors.primaryContainer
+                                              .withValues(alpha: 0.55),
+                                          borderRadius: BorderRadius.circular(
+                                            9,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              query.isEmpty
+                                                  ? 'TOTAL RECEIVED'
+                                                  : 'MATCHING PAYMENTS',
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        colors.onSurfaceVariant,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              _money(
+                                                query.isEmpty
+                                                    ? totalMinor
+                                                    : visibleTotalMinor,
+                                              ),
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w800,
+                                                    color: colors.primary,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              );
-                            }).toList(),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ),
-                  ],
+                    );
+                  },
                 );
               },
             ),
@@ -626,30 +833,317 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
 
 class _PaymentRow {
   const _PaymentRow({required this.payment, required this.customerName});
-
   final Payment payment;
   final String customerName;
 }
 
-class _SummaryItem extends StatelessWidget {
-  const _SummaryItem({required this.label, required this.value});
-
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.helper,
+    required this.accent,
+    required this.width,
+  });
+  final IconData icon;
   final String label;
   final String value;
+  final String helper;
+  final Color accent;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.bold),
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return SizedBox(
+      width: width,
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.11),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      helper,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _PaymentHistoryTile extends StatelessWidget {
+  const _PaymentHistoryTile({
+    required this.row,
+    required this.compact,
+    required this.date,
+    required this.money,
+  });
+  final _PaymentRow row;
+  final bool compact;
+  final String date;
+  final String Function(int) money;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final payment = row.payment;
+    final methodIcon = switch (payment.paymentMethod.toLowerCase()) {
+      'cash' => Icons.payments_outlined,
+      'bank transfer' => Icons.account_balance_outlined,
+      'card' => Icons.credit_card_outlined,
+      _ => Icons.receipt_long_outlined,
+    };
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: colors.primaryContainer.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.person_outline,
+                        color: colors.primary,
+                        size: 21,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            row.customerName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            date,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                          if (compact) ...[
+                            const SizedBox(height: 5),
+                            Wrap(
+                              spacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Icon(
+                                  methodIcon,
+                                  size: 14,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                                Text(
+                                  payment.paymentMethod,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                                if (payment.reference?.trim().isNotEmpty ==
+                                    true)
+                                  Text(
+                                    '· ${payment.reference!.trim()}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!compact)
+                Expanded(
+                  flex: 2,
+                  child: Row(
+                    children: [
+                      Icon(
+                        methodIcon,
+                        size: 17,
+                        color: colors.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          payment.paymentMethod,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (!compact)
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    payment.reference?.trim().isNotEmpty == true
+                        ? payment.reference!.trim()
+                        : '—',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              SizedBox(
+                width: compact ? 112 : 140,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      money(payment.amountMinor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF16856B),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF16856B).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: const Text(
+                        'Received',
+                        style: TextStyle(
+                          color: Color(0xFF16856B),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, indent: 6),
       ],
+    );
+  }
+}
+
+class _EmptyPayments extends StatelessWidget {
+  const _EmptyPayments({required this.onRecord});
+  final VoidCallback onRecord;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 12),
+      child: Column(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: colors.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.payments_outlined,
+              size: 29,
+              color: colors.primary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'No payments recorded yet',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Customer payments will appear here after they are recorded.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: onRecord,
+            icon: const Icon(Icons.add),
+            label: const Text('Record first payment'),
+          ),
+        ],
+      ),
     );
   }
 }

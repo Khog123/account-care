@@ -224,186 +224,230 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
   Widget build(BuildContext context) {
     final customersAsync = ref.watch(customerListProvider(false));
     final businessId = ref.watch(activeBusinessIdProvider);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    ref.listen(activeBusinessIdProvider, (previous, next) {
+      if (previous != next) {
+        setState(_resetDebtsFuture);
+      }
+    });
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Udhaar'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: () {
-              setState(_resetDebtsFuture);
-              ref.invalidate(customerListProvider(false));
-            },
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Search customers',
-                hintText: 'Name or phone number',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                        icon: const Icon(Icons.clear),
-                      ),
-                border: const OutlineInputBorder(),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 760;
+            final horizontalPadding = compact ? 14.0 : 22.0;
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                18,
+                horizontalPadding,
+                14,
               ),
-              onChanged: (value) {
-                setState(() => _searchQuery = value);
-              },
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: customersAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, stack) => Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Page heading, styled to match Payments.
+                  Row(
                     children: [
-                      const Text('Could not load customers.'),
-                      const SizedBox(height: 8),
-                      Text(error.toString()),
-                      const SizedBox(height: 8),
-                      FilledButton(
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.account_balance_wallet_outlined,
+                          color: colors.primary,
+                          size: 23,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Udhaar',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.4,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Track customer dues and outstanding balances.',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Refresh customer balances',
                         onPressed: () {
+                          setState(_resetDebtsFuture);
                           ref.invalidate(customerListProvider(false));
                         },
-                        child: const Text('Retry'),
+                        icon: const Icon(Icons.refresh),
                       ),
                     ],
                   ),
-                ),
-                data: (customers) {
-                  if (businessId == null || businessId.isEmpty) {
-                    return const Center(
-                      child: Text('No active business selected.'),
-                    );
-                  }
+                  const SizedBox(height: 18),
+                  Expanded(
+                    child: customersAsync.when(
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (error, stack) => Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline, size: 40),
+                            const SizedBox(height: 12),
+                            const Text('Could not load customers.'),
+                            const SizedBox(height: 8),
+                            Text(error.toString(), textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: () {
+                                ref.invalidate(customerListProvider(false));
+                              },
+                              child: const Text('Try again'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      data: (customers) {
+                        if (businessId == null || businessId.isEmpty) {
+                          return const Center(
+                            child: Text('No active business selected.'),
+                          );
+                        }
 
-                  // Recalculate balances only when the business or customer
-                  // list changes, not whenever the page rebuilds.
-                  final customerSignature = customers
-                      .map((customer) => customer.id)
-                      .join(',');
+                        final customerSignature = customers
+                            .map((customer) => customer.id)
+                            .join(',');
 
-                  if (_debtsFuture == null ||
-                      _debtsFutureBusinessId != businessId ||
-                      _debtsFutureCustomerSignature != customerSignature) {
-                    _debtsFutureBusinessId = businessId;
-                    _debtsFutureCustomerSignature = customerSignature;
-                    _debtsFuture = _loadDebts(
-                      customers: customers,
-                      businessId: businessId,
-                    );
-                  }
+                        if (_debtsFuture == null ||
+                            _debtsFutureBusinessId != businessId ||
+                            _debtsFutureCustomerSignature !=
+                                customerSignature) {
+                          _debtsFutureBusinessId = businessId;
+                          _debtsFutureCustomerSignature = customerSignature;
+                          _debtsFuture = _loadDebts(
+                            customers: customers,
+                            businessId: businessId,
+                          );
+                        }
 
-                  return FutureBuilder<List<_CustomerDebt>>(
-                    future: _debtsFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+                        return FutureBuilder<List<_CustomerDebt>>(
+                          future: _debtsFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
 
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Could not calculate customer balances:\n'
-                                '${snapshot.error}',
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 8),
-                              FilledButton(
-                                onPressed: () {
-                                  setState(_resetDebtsFuture);
-                                },
-                                child: const Text('Retry'),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      final allDebts = snapshot.data ?? [];
-                      final query = _searchQuery.trim().toLowerCase();
-
-                      final allDebtors = allDebts
-                          .where((debt) => debt.balanceMinor > 0)
-                          .toList();
-
-                      final debts = allDebtors.where((debt) {
-                        final customer = debt.customer;
-                        return customer.name.toLowerCase().contains(query) ||
-                            (customer.phone ?? '').toLowerCase().contains(
-                              query,
-                            );
-                      }).toList();
-
-                      final totalDebt = allDebtors.fold<int>(
-                        0,
-                        (sum, debt) => sum + debt.balanceMinor,
-                      );
-
-                      final selectedCustomer = allDebtors
-                          .where(
-                            (debt) => debt.customer.id == _selectedCustomer?.id,
-                          )
-                          .map((debt) => debt.customer)
-                          .firstOrNull;
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.account_balance_wallet_outlined,
-                                    size: 32,
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('Total Outstanding'),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          _money(totalDebt),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .headlineSmall
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                        ),
-                                      ],
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.error_outline, size: 36),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Could not calculate customer balances:\n'
+                                      '${snapshot.error}',
+                                      textAlign: TextAlign.center,
                                     ),
-                                  ),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text('${allDebtors.length} customers'),
-                                      const SizedBox(width: 12),
-                                      FilledButton.icon(
+                                    const SizedBox(height: 12),
+                                    FilledButton(
+                                      onPressed: () {
+                                        setState(_resetDebtsFuture);
+                                      },
+                                      child: const Text('Retry'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            final allDebts = snapshot.data ?? [];
+                            final allDebtors = allDebts
+                                .where((debt) => debt.balanceMinor > 0)
+                                .toList();
+
+                            final query = _searchQuery.trim().toLowerCase();
+
+                            final debts = allDebtors.where((debt) {
+                              final customer = debt.customer;
+                              return customer.name.toLowerCase().contains(
+                                    query,
+                                  ) ||
+                                  (customer.phone ?? '').toLowerCase().contains(
+                                    query,
+                                  );
+                            }).toList();
+
+                            final totalDebt = allDebtors.fold<int>(
+                              0,
+                              (sum, debt) => sum + debt.balanceMinor,
+                            );
+
+                            final selectedCustomer = allDebtors
+                                .where(
+                                  (debt) =>
+                                      debt.customer.id == _selectedCustomer?.id,
+                                )
+                                .map((debt) => debt.customer)
+                                .firstOrNull;
+
+                            final contentWidth =
+                                constraints.maxWidth - horizontalPadding * 2;
+                            final summaryGap = 12.0;
+                            final summaryWidth = compact
+                                ? contentWidth
+                                : (contentWidth - summaryGap * 2) / 3;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Summary cards and export action.
+                                Wrap(
+                                  spacing: summaryGap,
+                                  runSpacing: 12,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    _UdhaarMetricCard(
+                                      width: summaryWidth,
+                                      icon:
+                                          Icons.account_balance_wallet_outlined,
+                                      label: 'Total Outstanding',
+                                      value: _money(totalDebt),
+                                      helper: 'Total unpaid customer balances',
+                                      accent: colors.primary,
+                                    ),
+                                    _UdhaarMetricCard(
+                                      width: summaryWidth,
+                                      icon: Icons.people_alt_outlined,
+                                      label: 'Total Customers',
+                                      value: customers.length.toString(),
+                                      helper:
+                                          '${allDebtors.length} with outstanding dues',
+                                      accent: const Color(0xFF16856B),
+                                    ),
+                                    SizedBox(
+                                      width: compact ? contentWidth : null,
+                                      child: FilledButton.icon(
                                         onPressed: _isExportingDebtors
                                             ? null
                                             : () => _exportAllDebtors(
@@ -428,179 +472,425 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
                                                       strokeWidth: 2,
                                                     ),
                                               )
-                                            : const Icon(Icons.download),
+                                            : const Icon(
+                                                Icons.download_outlined,
+                                                size: 18,
+                                              ),
                                         label: Text(
                                           _isExportingDebtors
                                               ? 'Exporting...'
                                               : 'Download All Debtors',
                                         ),
                                       ),
-                                    ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Search sits underneath the summary row.
+                                TextField(
+                                  controller: _searchController,
+                                  onChanged: (value) {
+                                    setState(() => _searchQuery = value);
+                                  },
+                                  decoration: InputDecoration(
+                                    hintText:
+                                        'Search debtor by name or phone number',
+                                    prefixIcon: const Icon(Icons.search),
+                                    suffixIcon: _searchQuery.isEmpty
+                                        ? null
+                                        : IconButton(
+                                            tooltip: 'Clear search',
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              setState(() => _searchQuery = '');
+                                            },
+                                            icon: const Icon(Icons.close),
+                                          ),
+                                    filled: true,
+                                    isDense: true,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide.none,
+                                    ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Expanded(
-                            child: Flex(
-                              direction: MediaQuery.sizeOf(context).width < 1100
-                                  ? Axis.vertical
-                                  : Axis.horizontal,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                // Left panel: customer list.
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Debtor list and selected customer ledger.
                                 Expanded(
-                                  flex: 2,
-                                  child: debts.isEmpty
-                                      ? const Card(
-                                          child: Center(
-                                            child: Text(
-                                              'No outstanding customer debt found.',
+                                  child: LayoutBuilder(
+                                    builder: (context, panelConstraints) {
+                                      final vertical =
+                                          panelConstraints.maxWidth < 900;
+
+                                      return Flex(
+                                        direction: vertical
+                                            ? Axis.vertical
+                                            : Axis.horizontal,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Expanded(
+                                            flex: vertical ? 2 : 2,
+                                            child: Card(
+                                              margin: EdgeInsets.zero,
+                                              clipBehavior: Clip.antiAlias,
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.fromLTRB(
+                                                          16,
+                                                          14,
+                                                          16,
+                                                          10,
+                                                        ),
+                                                    child: Row(
+                                                      children: [
+                                                        Expanded(
+                                                          child: Text(
+                                                            'Customers with dues',
+                                                            style: theme
+                                                                .textTheme
+                                                                .titleMedium
+                                                                ?.copyWith(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w700,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 9,
+                                                                vertical: 5,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: colors
+                                                                .primaryContainer,
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  20,
+                                                                ),
+                                                          ),
+                                                          child: Text(
+                                                            '${debts.length}',
+                                                            style: TextStyle(
+                                                              color: colors
+                                                                  .onPrimaryContainer,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const Divider(height: 1),
+                                                  Expanded(
+                                                    child: debts.isEmpty
+                                                        ? Center(
+                                                            child: Padding(
+                                                              padding:
+                                                                  const EdgeInsets.all(
+                                                                    20,
+                                                                  ),
+                                                              child: Column(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
+                                                                children: [
+                                                                  Icon(
+                                                                    query.isEmpty
+                                                                        ? Icons
+                                                                              .check_circle_outline
+                                                                        : Icons
+                                                                              .search_off,
+                                                                    size: 38,
+                                                                    color: colors
+                                                                        .onSurfaceVariant,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    height: 10,
+                                                                  ),
+                                                                  Text(
+                                                                    query.isEmpty
+                                                                        ? 'No outstanding dues'
+                                                                        : 'No matching customers',
+                                                                    style: theme
+                                                                        .textTheme
+                                                                        .titleMedium
+                                                                        ?.copyWith(
+                                                                          fontWeight:
+                                                                              FontWeight.w700,
+                                                                        ),
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    height: 5,
+                                                                  ),
+                                                                  Text(
+                                                                    query.isEmpty
+                                                                        ? 'Customers with unpaid balances will appear here.'
+                                                                        : 'Try a different name or phone number.',
+                                                                    textAlign:
+                                                                        TextAlign
+                                                                            .center,
+                                                                    style: theme
+                                                                        .textTheme
+                                                                        .bodySmall
+                                                                        ?.copyWith(
+                                                                          color:
+                                                                              colors.onSurfaceVariant,
+                                                                        ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          )
+                                                        : ListView.separated(
+                                                            itemCount:
+                                                                debts.length,
+                                                            separatorBuilder:
+                                                                (_, _) =>
+                                                                    const Divider(
+                                                                      height: 1,
+                                                                      indent:
+                                                                          16,
+                                                                    ),
+                                                            itemBuilder: (context, index) {
+                                                              final debt =
+                                                                  debts[index];
+                                                              final selected =
+                                                                  _selectedCustomer
+                                                                      ?.id ==
+                                                                  debt
+                                                                      .customer
+                                                                      .id;
+                                                              final isExporting =
+                                                                  _exportingCustomerIds
+                                                                      .contains(
+                                                                        debt
+                                                                            .customer
+                                                                            .id,
+                                                                      );
+
+                                                              return ListTile(
+                                                                selected:
+                                                                    selected,
+                                                                selectedTileColor: colors
+                                                                    .primary
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.08,
+                                                                    ),
+                                                                contentPadding:
+                                                                    const EdgeInsets.symmetric(
+                                                                      horizontal:
+                                                                          14,
+                                                                      vertical:
+                                                                          5,
+                                                                    ),
+                                                                leading: CircleAvatar(
+                                                                  backgroundColor:
+                                                                      selected
+                                                                      ? colors
+                                                                            .primary
+                                                                      : colors
+                                                                            .primaryContainer,
+                                                                  foregroundColor:
+                                                                      selected
+                                                                      ? colors
+                                                                            .onPrimary
+                                                                      : colors
+                                                                            .onPrimaryContainer,
+                                                                  child: Text(
+                                                                    debt
+                                                                            .customer
+                                                                            .name
+                                                                            .isEmpty
+                                                                        ? '?'
+                                                                        : debt
+                                                                              .customer
+                                                                              .name[0]
+                                                                              .toUpperCase(),
+                                                                  ),
+                                                                ),
+                                                                title: Text(
+                                                                  debt
+                                                                      .customer
+                                                                      .name,
+                                                                  maxLines: 1,
+                                                                  overflow:
+                                                                      TextOverflow
+                                                                          .ellipsis,
+                                                                  style: const TextStyle(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w700,
+                                                                  ),
+                                                                ),
+                                                                subtitle: Text(
+                                                                  debt.customer.phone
+                                                                              ?.trim()
+                                                                              .isNotEmpty ==
+                                                                          true
+                                                                      ? debt
+                                                                            .customer
+                                                                            .phone!
+                                                                            .trim()
+                                                                      : 'No phone number',
+                                                                  maxLines: 1,
+                                                                  overflow:
+                                                                      TextOverflow
+                                                                          .ellipsis,
+                                                                ),
+                                                                trailing: Row(
+                                                                  mainAxisSize:
+                                                                      MainAxisSize
+                                                                          .min,
+                                                                  children: [
+                                                                    IconButton(
+                                                                      tooltip: 'Export customer history',
+                                                                      onPressed:
+                                                                          isExporting
+                                                                          ? null
+                                                                          : () => _exportCustomerHistory(
+                                                                              customer: debt.customer,
+                                                                              businessId: businessId,
+                                                                            ),
+                                                                      icon:
+                                                                          isExporting
+                                                                          ? const SizedBox(
+                                                                              width: 17,
+                                                                              height: 17,
+                                                                              child: CircularProgressIndicator(
+                                                                                strokeWidth: 2,
+                                                                              ),
+                                                                            )
+                                                                          : const Icon(
+                                                                              Icons.download_outlined,
+                                                                              size: 19,
+                                                                            ),
+                                                                    ),
+                                                                    const SizedBox(
+                                                                      width: 4,
+                                                                    ),
+                                                                    Text(
+                                                                      _money(
+                                                                        debt.balanceMinor,
+                                                                      ),
+                                                                      style: const TextStyle(
+                                                                        fontWeight:
+                                                                            FontWeight.w800,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                                onTap: () {
+                                                                  setState(() {
+                                                                    _selectedCustomer =
+                                                                        debt.customer;
+                                                                  });
+                                                                },
+                                                              );
+                                                            },
+                                                          ),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
-                                        )
-                                      : Card(
-                                          clipBehavior: Clip.antiAlias,
-                                          child: ListView.separated(
-                                            itemCount: debts.length,
-                                            separatorBuilder: (_, _) =>
-                                                const Divider(height: 1),
-                                            itemBuilder: (context, index) {
-                                              final debt = debts[index];
-                                              final selected =
-                                                  _selectedCustomer?.id ==
-                                                  debt.customer.id;
-                                              final isExporting =
-                                                  _exportingCustomerIds
-                                                      .contains(
-                                                        debt.customer.id,
-                                                      );
-
-                                              return ListTile(
-                                                selected: selected,
-                                                leading: CircleAvatar(
-                                                  child: Text(
-                                                    debt.customer.name.isEmpty
-                                                        ? '?'
-                                                        : debt.customer.name[0]
-                                                              .toUpperCase(),
-                                                  ),
-                                                ),
-                                                title: Text(debt.customer.name),
-                                                subtitle: Text(
-                                                  debt.customer.phone ??
-                                                      'No phone',
-                                                ),
-                                                trailing: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    IconButton(
-                                                      tooltip: 'Export customer history',
-                                                      onPressed: isExporting
-                                                          ? null
-                                                          : () =>
-                                                                _exportCustomerHistory(
-                                                                  customer: debt
-                                                                      .customer,
-                                                                  businessId:
-                                                                      businessId,
-                                                                ),
-                                                      icon: isExporting
-                                                          ? const SizedBox(
-                                                              width: 18,
-                                                              height: 18,
-                                                              child:
-                                                                  CircularProgressIndicator(
-                                                                    strokeWidth:
-                                                                        2,
-                                                                  ),
-                                                            )
-                                                          : const Icon(
-                                                              Icons
-                                                                  .download_outlined,
+                                          SizedBox(
+                                            width: vertical ? 0 : 14,
+                                            height: vertical ? 12 : 0,
+                                          ),
+                                          Expanded(
+                                            flex: vertical ? 3 : 3,
+                                            child: selectedCustomer == null
+                                                ? Card(
+                                                    margin: EdgeInsets.zero,
+                                                    child: Center(
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets.all(
+                                                              24,
                                                             ),
-                                                    ),
-                                                    Text(
-                                                      _money(debt.balanceMinor),
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
+                                                        child: Column(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .receipt_long_outlined,
+                                                              size: 46,
+                                                              color: colors
+                                                                  .onSurfaceVariant,
+                                                            ),
+                                                            const SizedBox(
+                                                              height: 12,
+                                                            ),
+                                                            Text(
+                                                              'Select a customer',
+                                                              style: theme
+                                                                  .textTheme
+                                                                  .titleMedium
+                                                                  ?.copyWith(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w700,
+                                                                  ),
+                                                            ),
+                                                            const SizedBox(
+                                                              height: 5,
+                                                            ),
+                                                            Text(
+                                                              'Their sales and payment history will appear here.',
+                                                              textAlign:
+                                                                  TextAlign
+                                                                      .center,
+                                                              style: theme
+                                                                  .textTheme
+                                                                  .bodySmall
+                                                                  ?.copyWith(
+                                                                    color: colors
+                                                                        .onSurfaceVariant,
+                                                                  ),
+                                                            ),
+                                                          ],
+                                                        ),
                                                       ),
                                                     ),
-                                                  ],
-                                                ),
-                                                onTap: () {
-                                                  setState(() {
-                                                    _selectedCustomer =
-                                                        debt.customer;
-                                                  });
-                                                },
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                ),
-                                SizedBox(
-                                  width: MediaQuery.sizeOf(context).width < 1100
-                                      ? 0
-                                      : 16,
-                                  height:
-                                      MediaQuery.sizeOf(context).width < 1100
-                                      ? 12
-                                      : 0,
-                                ),
-                                // Right panel: selected customer's history.
-                                Expanded(
-                                  flex: 3,
-                                  child: selectedCustomer == null
-                                      ? const Card(
-                                          child: Center(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.receipt_long_outlined,
-                                                  size: 48,
-                                                ),
-                                                SizedBox(height: 12),
-                                                Text(
-                                                  'Select a customer',
-                                                  style: TextStyle(
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.bold,
+                                                  )
+                                                : SingleChildScrollView(
+                                                    child: _CustomerLedgerPanel(
+                                                      customer:
+                                                          selectedCustomer,
+                                                      businessId: businessId,
+                                                      money: _money,
+                                                    ),
                                                   ),
-                                                ),
-                                                SizedBox(height: 4),
-                                                Text(
-                                                  'Their sales and payment history '
-                                                  'will appear here.',
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                              ],
-                                            ),
                                           ),
-                                        )
-                                      : SingleChildScrollView(
-                                          child: _CustomerLedgerPanel(
-                                            customer: selectedCustomer,
-                                            businessId: businessId,
-                                            money: _money,
-                                          ),
-                                        ),
+                                        ],
+                                      );
+                                    },
+                                  ),
                                 ),
                               ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -623,6 +913,87 @@ class _UdhaarPageState extends ConsumerState<UdhaarPage> {
     }
 
     return results;
+  }
+}
+
+class _UdhaarMetricCard extends StatelessWidget {
+  const _UdhaarMetricCard({
+    required this.width,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.helper,
+    required this.accent,
+  });
+
+  final double width;
+  final IconData icon;
+  final String label;
+  final String value;
+  final String helper;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return SizedBox(
+      width: width,
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.11),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      helper,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -650,8 +1021,9 @@ class _CustomerLedgerPanel extends ConsumerWidget {
     final database = ref.watch(databaseProvider);
 
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: FutureBuilder<List<Object>>(
           future: Future.wait<Object>([
             ledgerService.getOutstandingBalance(
@@ -689,11 +1061,46 @@ class _CustomerLedgerPanel extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Customer: ${customer.name}',
-                  style: Theme.of(context).textTheme.titleLarge,
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .primaryContainer,
+                      foregroundColor: Theme.of(context)
+                          .colorScheme
+                          .onPrimaryContainer,
+                      child: Text(
+                        customer.name.isEmpty
+                            ? '?'
+                            : customer.name[0].toUpperCase(),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            customer.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          if (customer.phone?.trim().isNotEmpty == true)
+                            Text(
+                              customer.phone!.trim(),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     Expanded(
@@ -790,7 +1197,7 @@ class _CustomerLedgerPanel extends ConsumerWidget {
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              '${item.productName} × '
+                                              '${item.productName} Ã— '
                                               '${item.quantity}',
                                             ),
                                           ),
