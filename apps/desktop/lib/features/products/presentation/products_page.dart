@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+import 'package:drift/drift.dart' hide Column;
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -6,6 +7,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/providers/business_provider.dart';
 import '../../../core/providers/product_provider.dart';
 import '../../../core/providers/service_providers.dart';
+import '../../../core/providers/database_provider.dart';
 
 class ProductsPage extends ConsumerStatefulWidget {
   const ProductsPage({super.key});
@@ -17,57 +19,60 @@ class ProductsPage extends ConsumerStatefulWidget {
 class _ProductsPageState extends ConsumerState<ProductsPage> {
   final TextEditingController _searchController = TextEditingController();
 
-  bool _showArchived = false;
+  String? _selectedCategoryId;
+  String _selectedStatus = 'All Status';
   String? _processingProductId;
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_onSearchChanged);
+    _searchController.addListener(_refresh);
   }
 
   @override
   void dispose() {
     _searchController
-      ..removeListener(_onSearchChanged)
+      ..removeListener(_refresh)
       ..dispose();
     super.dispose();
   }
 
-  void _onSearchChanged() {
-    setState(() {});
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  String _currentBusinessId() {
+    final id = ref.read(activeBusinessIdProvider);
+    if (id == null || id.isEmpty) {
+      throw StateError('No active business selected.');
+    }
+    return id;
+  }
+
+  void _refreshProducts() {
+    ref.invalidate(productListProvider);
+    ref.invalidate(archivedProductListProvider);
+    ref.invalidate(activeCategoryListProvider);
   }
 
   Future<void> _showAddProductDialog() async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (_) => ProductFormDialog(
-        businessId: _currentBusinessId(),
-      ),
+      builder: (_) => ProductFormDialog(businessId: _currentBusinessId()),
     );
-
-    if (saved == true && mounted) {
-      ref.invalidate(productListProvider);
-      ref.invalidate(archivedProductListProvider);
-    }
+    if (saved == true && mounted) _refreshProducts();
   }
 
   Future<void> _showEditProductDialog(Product product) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (_) => ProductFormDialog(
-        businessId: _currentBusinessId(),
-        product: product,
-      ),
+      builder: (_) =>
+          ProductFormDialog(businessId: _currentBusinessId(), product: product),
     );
-
-    if (saved == true && mounted) {
-      ref.invalidate(productListProvider);
-      ref.invalidate(archivedProductListProvider);
-    }
+    if (saved == true && mounted) _refreshProducts();
   }
 
-    Future<void> _showAdjustStockDialog(Product product) async {
+  Future<void> _showAdjustStockDialog(Product product) async {
     final saved = await showDialog<bool>(
       context: context,
       builder: (_) => StockAdjustmentDialog(
@@ -77,324 +82,1054 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
     );
 
     if (saved == true && mounted) {
-      ref.invalidate(productListProvider);
-      ref.invalidate(archivedProductListProvider);
-
+      _refreshProducts();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Stock updated for "${product.name}".'),
-        ),
+        SnackBar(content: Text('Stock updated for "${product.name}".')),
       );
     }
   }
 
   Future<void> _showAddCategoryDialog() async {
-    final businessId = _currentBusinessId();
     final controller = TextEditingController();
 
     try {
       final name = await showDialog<String>(
         context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text('Add Category'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              maxLength: 100,
-              decoration: const InputDecoration(
-                labelText: 'Category name',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (value) {
-                final trimmed = value.trim();
-                if (trimmed.isNotEmpty) {
-                  Navigator.of(dialogContext).pop(trimmed);
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Add Category'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 100,
+            decoration: const InputDecoration(
+              labelText: 'Category name',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) {
+              if (value.trim().isNotEmpty) {
+                Navigator.of(dialogContext).pop(value.trim());
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  Navigator.of(dialogContext).pop(controller.text.trim());
                 }
               },
+              child: const Text('Add'),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final trimmed = controller.text.trim();
-                  if (trimmed.isNotEmpty) {
-                    Navigator.of(dialogContext).pop(trimmed);
-                  }
-                },
-                child: const Text('Add'),
-              ),
-            ],
+          ],
+        ),
+      );
+
+      if (name == null || name.isEmpty || !mounted) return;
+
+      await ref
+          .read(categoryServiceProvider)
+          .createCategory(
+            businessId: _currentBusinessId(),
+            categoryId: const Uuid().v4(),
+            name: name,
           );
-        },
-      );
-
-      if (name == null || name.trim().isEmpty || !mounted) {
-        return;
-      }
-
-      final categoryService = ref.read(categoryServiceProvider);
-
-      await categoryService.createCategory(
-        businessId: businessId,
-        categoryId: const Uuid().v4(),
-        name: name.trim(),
-      );
 
       ref.invalidate(activeCategoryListProvider);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Category "${name.trim()}" added successfully.'),
-          ),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Category "$name" added.')));
       }
     } finally {
       controller.dispose();
     }
   }
 
+  Future<void> _showCategoriesDialog(List<Category> categories) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Categories'),
+        content: SizedBox(
+          width: 440,
+          height: 400,
+          child: categories.isEmpty
+              ? const Center(child: Text('No categories yet.'))
+              : ListView.separated(
+                  itemCount: categories.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, index) => ListTile(
+                    leading: const Icon(Icons.category_outlined),
+                    title: Text(categories[index].name),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              await _showAddCategoryDialog();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add Category'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _archiveProduct(Product product) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Delete Product'),
-          content: Text(
-            '"${product.name}" will be removed from the active product list. '
-            'Its sales and historical records will remain safe.',
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Product'),
+        content: Text(
+          '"${product.name}" will be removed from the active product list. '
+          'Its sales and historical records will remain safe.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _processingProductId = product.id);
+
+    try {
+      await ref
+          .read(productServiceProvider)
+          .deactivateProduct(
+            businessId: _currentBusinessId(),
+            productId: product.id,
+          );
+      _refreshProducts();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${product.name}" was archived.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete product: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _processingProductId = null);
+    }
+  }
+
+  Future<void> _restoreProduct(Product product) async {
+    setState(() => _processingProductId = product.id);
+
+    try {
+      await ref
+          .read(productServiceProvider)
+          .restoreProduct(
+            businessId: _currentBusinessId(),
+            productId: product.id,
+          );
+      _refreshProducts();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${product.name}" was restored.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not restore product: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _processingProductId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeAsync = ref.watch(productListProvider);
+    final archivedAsync = ref.watch(archivedProductListProvider);
+    final categoriesAsync = ref.watch(activeCategoryListProvider);
+
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 22, 22, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 850;
+
+                final heading = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Products',
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Manage your products and inventory',
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: Colors.grey.shade600),
+                    ),
+                  ],
+                );
+
+                final actions = Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    OutlinedButton(
+                      onPressed: () =>
+                          setState(() => _selectedStatus = 'Active'),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _selectedStatus == 'Active'
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : null,
+                      ),
+                      child: const Text('Active'),
+                    ),
+                    OutlinedButton(
+                      onPressed: () =>
+                          setState(() => _selectedStatus = 'Archived'),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _selectedStatus == 'Archived'
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : null,
+                      ),
+                      child: const Text('Inactive'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: categoriesAsync.maybeWhen(
+                        data: (categories) => () {
+                          _showCategoriesDialog(categories);
+                        },
+                        orElse: () => null,
+                      ),
+                      icon: const Icon(Icons.category_outlined),
+                      label: const Text('Categories'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _showAddProductDialog,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add Product'),
+                    ),
+                  ],
+                );
+
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      heading,
+                      const SizedBox(height: 12),
+                      Align(alignment: Alignment.centerLeft, child: actions),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: heading),
+                    const SizedBox(width: 12),
+                    Flexible(child: actions),
+                  ],
+                );
+              },
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Delete'),
+
+            const SizedBox(height: 20),
+            Expanded(
+              child: activeAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => _ProductsErrorState(
+                  error: error,
+                  onRetry: _refreshProducts,
+                ),
+                data: (activeProducts) => archivedAsync.when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, _) => _ProductsErrorState(
+                    error: error,
+                    onRetry: _refreshProducts,
+                  ),
+                  data: (archivedProducts) => categoriesAsync.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, _) => _ProductsErrorState(
+                      error: error,
+                      onRetry: _refreshProducts,
+                    ),
+                    data: (categories) => _buildContent(
+                      activeProducts,
+                      archivedProducts,
+                      categories,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(
+    List<Product> activeProducts,
+    List<Product> archivedProducts,
+    List<Category> categories,
+  ) {
+    final allProducts = [...activeProducts, ...archivedProducts];
+    final query = _searchController.text.trim().toLowerCase();
+    final now = DateTime.now();
+    final startOfWeek = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
+
+    final addedThisWeek = allProducts
+        .where((p) => !p.createdAt.isBefore(startOfWeek))
+        .length;
+
+    final lowStock = activeProducts
+        .where((p) => p.stockQuantity <= p.lowStockThreshold)
+        .length;
+
+    final categoryNames = {
+      for (final category in categories) category.id: category.name,
+    };
+
+    final filteredProducts =
+        allProducts.where((product) {
+          final matchesSearch =
+              query.isEmpty ||
+              product.name.toLowerCase().contains(query) ||
+              (product.sku?.toLowerCase().contains(query) ?? false);
+
+          final matchesCategory =
+              _selectedCategoryId == null ||
+              product.categoryId == _selectedCategoryId;
+
+          final matchesStatus = switch (_selectedStatus) {
+            'Active' => product.isActive,
+            'Archived' => !product.isActive,
+            'Out of Stock' => product.isActive && product.stockQuantity == 0,
+            'Low Stock' =>
+              product.isActive &&
+                  product.stockQuantity > 0 &&
+                  product.stockQuantity <= product.lowStockThreshold,
+            'In Stock' =>
+              product.isActive &&
+                  product.stockQuantity > product.lowStockThreshold,
+            _ => true,
+          };
+
+          return matchesSearch && matchesCategory && matchesStatus;
+        }).toList()..sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+
+    final categoryCounts = <String, int>{};
+    for (final product in activeProducts) {
+      categoryCounts.update(
+        product.categoryId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    Widget buildSummaryCards(double availableWidth) {
+      final columns = availableWidth < 600
+          ? 1
+          : availableWidth < 1000
+          ? 2
+          : 4;
+
+      final cardWidth = (availableWidth - (12 * (columns - 1))) / columns;
+
+      return Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          SizedBox(
+            width: cardWidth,
+            child: _SummaryCard(
+              title: 'Total Products',
+              value: allProducts.length.toString(),
+              subtitle: '$addedThisWeek added this week',
+              icon: Icons.inventory_2_outlined,
+              accent: const Color(0xFF4169E1),
+            ),
+          ),
+          SizedBox(
+            width: cardWidth,
+            child: _SummaryCard(
+              title: 'Active Products',
+              value: activeProducts.length.toString(),
+              subtitle: 'Available in product list',
+              icon: Icons.check_circle_outline,
+              accent: const Color(0xFF18865A),
+            ),
+          ),
+          SizedBox(
+            width: cardWidth,
+            child: _SummaryCard(
+              title: 'Low Stock',
+              value: lowStock.toString(),
+              subtitle: 'At or below stock threshold',
+              icon: Icons.warning_amber_rounded,
+              accent: const Color(0xFFD97706),
+            ),
+          ),
+          SizedBox(
+            width: cardWidth,
+            child: _SummaryCard(
+              title: 'Archived',
+              value: archivedProducts.length.toString(),
+              subtitle: 'Inactive products',
+              icon: Icons.archive_outlined,
+              accent: const Color(0xFFB42318),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final productTable = SizedBox(
+      height: 430,
+      child: _buildProductTable(filteredProducts, categories, categoryNames),
+    );
+
+    final inventoryPanel = SizedBox(
+      height: 280,
+      child: _InventoryMovementsCard(
+        businessId: _currentBusinessId(),
+        products: allProducts,
+      ),
+    );
+
+    final categoriesPanel = SizedBox(
+      height: 280,
+      child: _CategoriesCard(
+        categories: categories,
+        counts: categoryCounts,
+        onViewAll: () => _showCategoriesDialog(categories),
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, pageConstraints) {
+        final narrow = pageConstraints.maxWidth < 1050;
+        final stackPanels = pageConstraints.maxWidth < 720;
+
+        if (narrow) {
+          // On narrow windows, everything belongs to one scrollable page.
+          return SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                buildSummaryCards(pageConstraints.maxWidth),
+                const SizedBox(height: 16),
+                productTable,
+                const SizedBox(height: 14),
+                if (stackPanels) ...[
+                  inventoryPanel,
+                  const SizedBox(height: 14),
+                  categoriesPanel,
+                ] else
+                  SizedBox(
+                    height: 280,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: inventoryPanel),
+                        const SizedBox(width: 14),
+                        Expanded(child: categoriesPanel),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }
+
+        // Keep the existing desktop arrangement on wider windows.
+        return Column(
+          children: [
+            buildSummaryCards(pageConstraints.maxWidth),
+            const SizedBox(height: 16),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: _buildProductTable(
+                      filteredProducts,
+                      categories,
+                      categoryNames,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    flex: 1,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _InventoryMovementsCard(
+                            businessId: _currentBusinessId(),
+                            products: allProducts,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Expanded(
+                          flex: 2,
+                          child: _CategoriesCard(
+                            categories: categories,
+                            counts: categoryCounts,
+                            onViewAll: () => _showCategoriesDialog(categories),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         );
       },
     );
-
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
-    setState(() {
-      _processingProductId = product.id;
-    });
-
-    try {
-      final productService = ref.read(productServiceProvider);
-
-      await productService.deactivateProduct(
-        businessId: _currentBusinessId(),
-        productId: product.id,
-      );
-
-      ref.invalidate(productListProvider);
-      ref.invalidate(archivedProductListProvider);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('"${product.name}" was deleted.'),
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not delete product: $error'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _processingProductId = null;
-        });
-      }
-    }
   }
 
-  Future<void> _restoreProduct(Product product) async {
-    setState(() {
-      _processingProductId = product.id;
-    });
-
-    try {
-      final productService = ref.read(productServiceProvider);
-
-      await productService.restoreProduct(
-        businessId: _currentBusinessId(),
-        productId: product.id,
-      );
-
-      ref.invalidate(productListProvider);
-      ref.invalidate(archivedProductListProvider);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('"${product.name}" was restored.'),
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not restore product: $error'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _processingProductId = null;
-        });
-      }
-    }
-  }
-
-  String _currentBusinessId() {
-    final businessId = ref.read(activeBusinessIdProvider);
-
-    if (businessId == null || businessId.isEmpty) {
-      throw StateError('No active business selected.');
-    }
-
-    return businessId;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final productsAsync = _showArchived
-        ? ref.watch(archivedProductListProvider)
-        : ref.watch(productListProvider);
-
-    final query = _searchController.text.trim().toLowerCase();
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Products'),
-        actions: [
+  Widget _buildProductTable(
+    List<Product> products,
+    List<Category> categories,
+    Map<String, String> categoryNames,
+  ) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: FilledButton.icon(
-              onPressed: _showArchived ? null : _showAddProductDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Product'),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 42,
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search products...',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        suffixIcon: _searchController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Clear search',
+                                onPressed: _searchController.clear,
+                                icon: const Icon(Icons.close, size: 18),
+                              ),
+                        contentPadding: EdgeInsets.zero,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    initialValue: _selectedCategoryId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('All Categories'),
+                      ),
+                      ...categories.map(
+                        (category) => DropdownMenuItem<String?>(
+                          value: category.id,
+                          child: Text(
+                            category.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _selectedCategoryId = value),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _selectedStatus,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Status',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    items:
+                        const [
+                          'All Status',
+                          'Active',
+                          'Archived',
+                          'In Stock',
+                          'Low Stock',
+                          'Out of Stock',
+                        ].map((status) {
+                          return DropdownMenuItem(
+                            value: status,
+                            child: Text(
+                              status,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _selectedStatus = value);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: products.isEmpty
+                ? const Center(child: Text('No products match these filters.'))
+                : SingleChildScrollView(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        horizontalMargin: 12,
+                        columnSpacing: 18,
+                        headingRowHeight: 44,
+                        dataRowMinHeight: 54,
+                        dataRowMaxHeight: 62,
+                        columns: const [
+                          DataColumn(label: Text('#')),
+                          DataColumn(label: Text('Product')),
+                          DataColumn(label: Text('Category')),
+                          DataColumn(label: Text('SKU')),
+                          DataColumn(label: Text('Purchase Price')),
+                          DataColumn(label: Text('Sale Price')),
+                          DataColumn(label: Text('Stock')),
+                          DataColumn(label: Text('Status')),
+                          DataColumn(label: Text('Action')),
+                        ],
+                        rows: [
+                          for (var i = 0; i < products.length; i++)
+                            _productRow(products[i], i + 1, categoryNames),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            child: Text(
+              '${products.length} product${products.length == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+    );
+  }
+
+  DataRow _productRow(
+    Product product,
+    int index,
+    Map<String, String> categoryNames,
+  ) {
+    final isProcessing = _processingProductId == product.id;
+    final status = !product.isActive
+        ? 'Archived'
+        : product.stockQuantity == 0
+        ? 'Out of Stock'
+        : product.stockQuantity <= product.lowStockThreshold
+        ? 'Low Stock'
+        : 'In Stock';
+
+    final statusColor = switch (status) {
+      'Archived' => const Color(0xFF667085),
+      'Out of Stock' => const Color(0xFFB42318),
+      'Low Stock' => const Color(0xFFB54708),
+      _ => const Color(0xFF027A48),
+    };
+
+    return DataRow(
+      cells: [
+        DataCell(Text('$index')),
+        DataCell(
+          SizedBox(
+            width: 145,
+            child: Text(
+              product.name,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+        DataCell(
+          SizedBox(
+            width: 100,
+            child: Text(
+              categoryNames[product.categoryId] ?? 'Uncategorised',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        DataCell(
+          Text(product.sku?.trim().isNotEmpty == true ? product.sku! : '-'),
+        ),
+        DataCell(Text(_formatMoney(product.purchasePriceMinor))),
+        DataCell(Text(_formatMoney(product.salePriceMinor))),
+        DataCell(Text('${product.stockQuantity}')),
+        DataCell(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        DataCell(
+          isProcessing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (product.isActive) ...[
+                      IconButton(
+                        tooltip: 'Edit',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _showEditProductDialog(product),
+                        icon: const Icon(Icons.edit_outlined, size: 19),
+                      ),
+                      IconButton(
+                        tooltip: 'Adjust Stock',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _showAdjustStockDialog(product),
+                        icon: const Icon(Icons.inventory_outlined, size: 19),
+                      ),
+                      IconButton(
+                        tooltip: 'Delete',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _archiveProduct(product),
+                        icon: const Icon(Icons.delete_outline, size: 19),
+                      ),
+                    ] else
+                      IconButton(
+                        tooltip: 'Restore',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _restoreProduct(product),
+                        icon: const Icon(Icons.restore_outlined, size: 19),
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.accent,
+  });
+
+  final String title;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: accent, size: 21),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    value,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(color: accent),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryMovementsCard extends ConsumerWidget {
+  const _InventoryMovementsCard({
+    required this.businessId,
+    required this.products,
+  });
+
+  final String businessId;
+  final List<Product> products;
+
+  String _movementLabel(String type) {
+    switch (type) {
+      case 'sale':
+        return 'Sale';
+      case 'initial_stock':
+        return 'Initial stock';
+      case 'stock_adjustment_add':
+        return 'Stock added';
+      case 'stock_adjustment_remove':
+        return 'Stock removed';
+      default:
+        return type.replaceAll('_', ' ');
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final local = date.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    return '${local.day.toString().padLeft(2, '0')}/'
+        '${local.month.toString().padLeft(2, '0')} '
+        '$hour:$minute $period';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final database = ref.watch(databaseProvider);
+    final productNames = {
+      for (final product in products) product.id: product.name,
+    };
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment<bool>(
-                      value: false,
-                      icon: Icon(Icons.inventory_2_outlined),
-                      label: Text('Active'),
-                    ),
-                    ButtonSegment<bool>(
-                      value: true,
-                      icon: Icon(Icons.archive_outlined),
-                      label: Text('Archived'),
-                    ),
-                  ],
-                  selected: {_showArchived},
-                  onSelectionChanged: (selection) {
-                    setState(() {
-                      _showArchived = selection.first;
-                      _searchController.clear();
-                    });
-                  },
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: _showArchived
-                          ? 'Search archived products...'
-                          : 'Search products...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: query.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: 'Clear search',
-                              onPressed: _searchController.clear,
-                              icon: const Icon(Icons.clear),
-                            ),
-                      border: const OutlineInputBorder(),
-                    ),
+                const Expanded(
+                  child: Text(
+                    'Inventory Movements',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  onPressed: _showArchived ? null : _showAddCategoryDialog,
-                  icon: const Icon(Icons.category_outlined),
-                  label: const Text('Add Category'),
+                Icon(
+                  Icons.history,
+                  size: 19,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 3),
+            Text(
+              'Latest stock activity',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
             Expanded(
-              child: productsAsync.when(
-                loading: () => const Center(
-                  child: CircularProgressIndicator(),
-                ),
-                error: (error, stackTrace) => _ProductsErrorState(
-                  error: error,
-                  onRetry: () {
-                    if (_showArchived) {
-                      ref.invalidate(archivedProductListProvider);
-                    } else {
-                      ref.invalidate(productListProvider);
-                    }
-                  },
-                ),
-                data: (products) {
-                  final filteredProducts = products.where((product) {
-                    if (query.isEmpty) {
-                      return true;
-                    }
-
-                    return product.name.toLowerCase().contains(query) ||
-                        (product.sku?.toLowerCase().contains(query) ?? false);
-                  }).toList();
-
-                  if (filteredProducts.isEmpty) {
-                    return _EmptyProductsState(
-                      archived: _showArchived,
-                      hasSearch: query.isNotEmpty,
-                      onAddProduct:
-                          _showArchived ? null : _showAddProductDialog,
+              child: FutureBuilder<List<InventoryMovement>>(
+                future:
+                    (database.select(database.inventoryMovements)
+                          ..where((m) => m.businessId.equals(businessId))
+                          ..orderBy([(m) => OrderingTerm.desc(m.movementAt)])
+                          ..limit(4))
+                        .get(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     );
                   }
 
-                    return _ProductsTable(
-                    products: filteredProducts,
-                    processingProductId: _processingProductId,
-                    onEdit: _showArchived ? null : _showEditProductDialog,
-                    onAdjustStock:
-                    _showArchived ? null : _showAdjustStockDialog,
-                    onDelete: _showArchived ? null : _archiveProduct,
-                    onRestore: _showArchived ? _restoreProduct : null,
+                  if (snapshot.hasError) {
+                    return const Center(
+                      child: Text('Could not load movements.'),
+                    );
+                  }
+
+                  final movements = snapshot.data ?? [];
+                  if (movements.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No inventory movements yet.',
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: movements.length,
+                    separatorBuilder: (_, _) => const Divider(height: 13),
+                    itemBuilder: (context, index) {
+                      final movement = movements[index];
+                      final quantity = movement.quantityChange;
+                      final color = quantity < 0
+                          ? const Color(0xFFB42318)
+                          : const Color(0xFF18865A);
+                      final name =
+                          productNames[movement.productId] ?? 'Product';
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              quantity < 0
+                                  ? Icons.south_east
+                                  : Icons.north_east,
+                              color: color,
+                              size: 17,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${_movementLabel(movement.movementType)} Â· '
+                                  '${_formatDate(movement.movementAt)}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${quantity > 0 ? '+' : ''}$quantity',
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -406,235 +1141,82 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   }
 }
 
-class _ProductsTable extends StatelessWidget {
-    const _ProductsTable({
-    required this.products,
-    required this.processingProductId,
-    required this.onEdit,
-    required this.onAdjustStock,
-    required this.onDelete,
-    required this.onRestore,
+class _CategoriesCard extends StatelessWidget {
+  const _CategoriesCard({
+    required this.categories,
+    required this.counts,
+    required this.onViewAll,
   });
 
-  final List<Product> products;
-  final String? processingProductId;
-  final ValueChanged<Product>? onEdit;  
-  final ValueChanged<Product>? onAdjustStock;
-  final ValueChanged<Product>? onDelete;
-  final ValueChanged<Product>? onRestore;
+  final List<Category> categories;
+  final Map<String, int> counts;
+  final VoidCallback onViewAll;
 
   @override
   Widget build(BuildContext context) {
+    final shown = categories.take(5).toList();
+
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowHeight: 52,
-            dataRowMinHeight: 64,
-            dataRowMaxHeight: 72,
-            columns: const [
-              DataColumn(label: Text('Product')),
-              DataColumn(label: Text('SKU')),
-              DataColumn(label: Text('Purchase Price')),
-              DataColumn(label: Text('Sale Price')),
-              DataColumn(label: Text('Stock')),
-              DataColumn(label: Text('Status')),
-              DataColumn(label: Text('Actions')),
-            ],
-            rows: products.map((product) {
-              final processing = processingProductId == product.id;
-
-              return DataRow(
-                cells: [
-                  DataCell(
-                    SizedBox(
-                      width: 220,
-                      child: Text(
-                        product.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Categories',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  DataCell(
-                    Text(product.sku?.trim().isNotEmpty == true
-                        ? product.sku!
-                        : '-'),
-                  ),
-                  DataCell(
-                    Text(_formatMoney(product.purchasePriceMinor)),
-                  ),
-                  DataCell(
-                    Text(_formatMoney(product.salePriceMinor)),
-                  ),
-                  DataCell(
-                    Text(
-                      product.stockQuantity == 0
-                          ? '0 (Out of Stock)'
-                          : product.stockQuantity.toString(),
-                    ),
-                  ),
-                  DataCell(
-                    _StatusBadge(
-                      text: product.stockQuantity == 0
-                          ? 'Out of Stock'
-                          : product.stockQuantity <=
-                                  product.lowStockThreshold
-                              ? 'Low Stock'
-                              : 'In Stock',
-                    ),
-                  ),
-                  DataCell(
-                    processing
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
+                ),
+                TextButton(onPressed: onViewAll, child: const Text('View all')),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Expanded(
+              child: categories.isEmpty
+                  ? const Center(child: Text('No categories yet.'))
+                  : ListView.separated(
+                      itemCount: shown.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final category = shown[index];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
                             children: [
-                              if (onEdit != null)
-                                IconButton(
-                                  tooltip: 'Edit',
-                                  onPressed: () => onEdit!(product),
-                                  icon: const Icon(Icons.edit_outlined),
+                              const Icon(Icons.folder_outlined, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  category.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12),
                                 ),
-                              if (onAdjustStock != null)
-                                IconButton(
-                                  tooltip: 'Adjust Stock',
-                                  onPressed: () =>
-                                      onAdjustStock!(product),
-                                  icon: const Icon(
-                                    Icons.inventory_rounded,
-                                  ),
-                                ),
-                              if (onDelete != null)
-                                IconButton(
-                                  tooltip: 'Delete',
-                                  onPressed: () => onDelete!(product),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                  ),
-                                ),
-                              if (onRestore != null)
-                                IconButton(
-                                  tooltip: 'Restore',
-                                  onPressed: () => onRestore!(product),
-                                  icon: const Icon(
-                                    Icons.restore_outlined,
-                                  ),
-                                ),
+                              ),
+                              Text(
+                                '${counts[category.id] ?? 0}',
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
                             ],
                           ),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({
-    required this.text,
-  });
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: theme.textTheme.labelMedium,
-      ),
-    );
-  }
-}
-
-class _EmptyProductsState extends StatelessWidget {
-  const _EmptyProductsState({
-    required this.archived,
-    required this.hasSearch,
-    required this.onAddProduct,
-  });
-
-  final bool archived;
-  final bool hasSearch;
-  final VoidCallback? onAddProduct;
-
-  @override
-  Widget build(BuildContext context) {
-    String title;
-    String message;
-
-    if (hasSearch) {
-      title = 'No products found';
-      message = 'Try a different product name or SKU.';
-    } else if (archived) {
-      title = 'No archived products';
-      message = 'Products that you delete will appear here.';
-    } else {
-      title = 'No products yet';
-      message = 'Add your first product to start managing inventory.';
-    }
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            archived
-                ? Icons.archive_outlined
-                : Icons.inventory_2_outlined,
-            size: 64,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(message),
-          if (onAddProduct != null && !hasSearch) ...[
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: onAddProduct,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Product'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _ProductsErrorState extends StatelessWidget {
-  const _ProductsErrorState({
-    required this.error,
-    required this.onRetry,
-  });
+  const _ProductsErrorState({required this.error, required this.onRetry});
 
   final Object error;
   final VoidCallback onRetry;
@@ -645,18 +1227,12 @@ class _ProductsErrorState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.error_outline,
-            size: 56,
-          ),
-          const SizedBox(height: 16),
+          const Icon(Icons.error_outline, size: 48),
+          const SizedBox(height: 12),
           const Text('Could not load products.'),
           const SizedBox(height: 8),
-          Text(
-            error.toString(),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
+          Text(error.toString(), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
@@ -669,18 +1245,13 @@ class _ProductsErrorState extends StatelessWidget {
 }
 
 class ProductFormDialog extends ConsumerStatefulWidget {
-  const ProductFormDialog({
-    super.key,
-    required this.businessId,
-    this.product,
-  });
+  const ProductFormDialog({super.key, required this.businessId, this.product});
 
   final String businessId;
   final Product? product;
 
   @override
-  ConsumerState<ProductFormDialog> createState() =>
-      _ProductFormDialogState();
+  ConsumerState<ProductFormDialog> createState() => _ProductFormDialogState();
 }
 
 class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
@@ -704,25 +1275,17 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
 
     final product = widget.product;
 
-    _nameController = TextEditingController(
-      text: product?.name ?? '',
-    );
-    _skuController = TextEditingController(
-      text: product?.sku ?? '',
-    );
+    _nameController = TextEditingController(text: product?.name ?? '');
+    _skuController = TextEditingController(text: product?.sku ?? '');
     _purchasePriceController = TextEditingController(
       text: product == null
           ? ''
           : _formatMinorInput(product.purchasePriceMinor),
     );
     _salePriceController = TextEditingController(
-      text: product == null
-          ? ''
-          : _formatMinorInput(product.salePriceMinor),
+      text: product == null ? '' : _formatMinorInput(product.salePriceMinor),
     );
-      _stockController = TextEditingController(
-        text: '0',
-      );
+    _stockController = TextEditingController(text: '0');
     _lowStockController = TextEditingController(
       text: product?.lowStockThreshold.toString() ?? '0',
     );
@@ -749,9 +1312,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
 
     if (categoryId == null || categoryId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a category.'),
-        ),
+        const SnackBar(content: Text('Please select a category.')),
       );
       return;
     }
@@ -767,12 +1328,8 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
       final purchasePriceMinor = _parseMoneyToMinor(
         _purchasePriceController.text,
       );
-      final salePriceMinor = _parseMoneyToMinor(
-        _salePriceController.text,
-      );
-      final lowStockThreshold = int.parse(
-        _lowStockController.text.trim(),
-      );
+      final salePriceMinor = _parseMoneyToMinor(_salePriceController.text);
+      final lowStockThreshold = int.parse(_lowStockController.text.trim());
 
       if (_isEditing) {
         await productService.updateProduct(
@@ -800,9 +1357,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
           lowStockThreshold: lowStockThreshold,
         );
 
-        final openingStock = int.parse(
-          _stockController.text.trim(),
-        );
+        final openingStock = int.parse(_stockController.text.trim());
 
         if (openingStock > 0) {
           await inventoryService.addStock(
@@ -821,9 +1376,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not save product: $error'),
-          ),
+          SnackBar(content: Text('Could not save product: $error')),
         );
       }
     } finally {
@@ -895,15 +1448,14 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                             labelText: 'Category',
                             border: OutlineInputBorder(),
                           ),
-                          child: Text(
-                            'Could not load categories: $error',
-                          ),
+                          child: Text('Could not load categories: $error'),
                         ),
                         data: (categories) {
                           return DropdownButtonFormField<String>(
-                            initialValue: categories.any(
-                              (category) => category.id == _categoryId,
-                            )
+                            initialValue:
+                                categories.any(
+                                  (category) => category.id == _categoryId,
+                                )
                                 ? _categoryId
                                 : null,
                             decoration: const InputDecoration(
@@ -985,10 +1537,10 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                                Row(
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                                       if (!_isEditing)
+                    if (!_isEditing)
                       Expanded(
                         child: TextFormField(
                           controller: _stockController,
@@ -996,8 +1548,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                           decoration: const InputDecoration(
                             labelText: 'Opening stock',
                             border: OutlineInputBorder(),
-                            helperText:
-                                'Recorded as initial inventory.',
+                            helperText: 'Recorded as initial inventory.',
                           ),
                           validator: _validateWholeNumber,
                         ),
@@ -1025,9 +1576,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                         labelText: 'Current stock',
                         border: OutlineInputBorder(),
                       ),
-                      child: Text(
-                        widget.product!.stockQuantity.toString(),
-                      ),
+                      child: Text(widget.product!.stockQuantity.toString()),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -1054,9 +1603,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _saving
-              ? null
-              : () => Navigator.of(context).pop(false),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
           child: const Text('Cancel'),
         ),
         FilledButton(
@@ -1065,9 +1612,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
               ? const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(_isEditing ? 'Save Changes' : 'Add Product'),
         ),
@@ -1091,8 +1636,7 @@ class StockAdjustmentDialog extends ConsumerStatefulWidget {
       _StockAdjustmentDialogState();
 }
 
-class _StockAdjustmentDialogState
-    extends ConsumerState<StockAdjustmentDialog> {
+class _StockAdjustmentDialogState extends ConsumerState<StockAdjustmentDialog> {
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _quantityController;
@@ -1131,9 +1675,7 @@ class _StockAdjustmentDialogState
     try {
       final inventoryService = ref.read(inventoryServiceProvider);
 
-      final quantity = int.parse(
-        _quantityController.text.trim(),
-      );
+      final quantity = int.parse(_quantityController.text.trim());
 
       if (_addStock) {
         await inventoryService.addStock(
@@ -1163,9 +1705,7 @@ class _StockAdjustmentDialogState
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not adjust stock: $error'),
-          ),
+          SnackBar(content: Text('Could not adjust stock: $error')),
         );
       }
     } finally {
@@ -1264,9 +1804,7 @@ class _StockAdjustmentDialogState
       ),
       actions: [
         TextButton(
-          onPressed: _saving
-              ? null
-              : () => Navigator.of(context).pop(false),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
           child: const Text('Cancel'),
         ),
         FilledButton(
@@ -1275,9 +1813,7 @@ class _StockAdjustmentDialogState
               ? const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(_addStock ? 'Add Stock' : 'Remove Stock'),
         ),
@@ -1361,4 +1897,3 @@ String _formatMoney(int amountMinor) {
   final decimal = (amountMinor % 100).abs().toString().padLeft(2, '0');
   return 'Rs. $major.$decimal';
 }
-
