@@ -300,29 +300,30 @@ class _SalesPageState extends ConsumerState<SalesPage> {
     return Card(
       color: AccountCareTheme.card,
       elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         side: const BorderSide(color: AccountCareTheme.border),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Container(
-                  width: 38,
-                  height: 38,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: AccountCareTheme.blue.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   child: const Icon(
                     Icons.inventory_2_outlined,
                     color: AccountCareTheme.blue,
-                    size: 21,
+                    size: 20,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -336,11 +337,12 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                             ?.copyWith(
                               color: AccountCareTheme.text,
                               fontWeight: FontWeight.w700,
+                              fontSize: 15,
                             ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
-                        '${filteredProducts.length} products available to browse',
+                        '${filteredProducts.length} products available',
                         style: const TextStyle(
                           color: AccountCareTheme.muted,
                           fontSize: 11,
@@ -351,11 +353,11 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
+                    horizontal: 9,
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: AccountCareTheme.blue.withValues(alpha: 0.08),
+                    color: AccountCareTheme.blue.withValues(alpha: 0.09),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -369,7 +371,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             TextField(
               controller: _searchController,
               onChanged: (value) {
@@ -379,7 +381,11 @@ class _SalesPageState extends ConsumerState<SalesPage> {
               },
               decoration: InputDecoration(
                 hintText: 'Search product name or SKU...',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                hintStyle: const TextStyle(
+                  fontSize: 12,
+                  color: AccountCareTheme.muted,
+                ),
+                prefixIcon: const Icon(Icons.search, size: 19),
                 suffixIcon: _searchQuery.isEmpty
                     ? null
                     : IconButton(
@@ -390,21 +396,21 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                             _searchQuery = '';
                           });
                         },
-                        icon: const Icon(Icons.close, size: 18),
+                        icon: const Icon(Icons.close, size: 17),
                       ),
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surface,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 13,
+                  vertical: 12,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(9),
                   borderSide: const BorderSide(color: AccountCareTheme.border),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(9),
                   borderSide: const BorderSide(color: AccountCareTheme.border),
                 ),
               ),
@@ -418,7 +424,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                         children: [
                           Icon(
                             Icons.inventory_2_outlined,
-                            size: 42,
+                            size: 40,
                             color: AccountCareTheme.muted.withValues(
                               alpha: 0.6,
                             ),
@@ -476,22 +482,23 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                           alpha: 0.55,
                                         )
                                       : AccountCareTheme.border,
+                                  width: inCart ? 1.4 : 1,
                                 ),
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(11),
                               ),
                               child: Padding(
-                                padding: const EdgeInsets.all(11),
+                                padding: const EdgeInsets.all(10),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
                                         Container(
-                                          width: 32,
-                                          height: 32,
+                                          width: 30,
+                                          height: 30,
                                           decoration: BoxDecoration(
                                             color: AccountCareTheme.blue
-                                                .withValues(alpha: 0.08),
+                                                .withValues(alpha: 0.09),
                                             borderRadius: BorderRadius.circular(
                                               8,
                                             ),
@@ -499,7 +506,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                           child: const Icon(
                                             Icons.inventory_2_outlined,
                                             color: AccountCareTheme.blue,
-                                            size: 18,
+                                            size: 17,
                                           ),
                                         ),
                                         const Spacer(),
@@ -516,17 +523,17 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                                   BorderRadius.circular(6),
                                             ),
                                             child: Text(
-                                              '×${cartItem.quantity}',
+                                              'x${cartItem.quantity}',
                                               style: const TextStyle(
                                                 color: AccountCareTheme.blue,
-                                                fontSize: 11,
+                                                fontSize: 10,
                                                 fontWeight: FontWeight.w700,
                                               ),
                                             ),
                                           ),
                                       ],
                                     ),
-                                    const SizedBox(height: 9),
+                                    const SizedBox(height: 8),
                                     Text(
                                       product.name,
                                       maxLines: 2,
@@ -534,6 +541,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                       style: const TextStyle(
                                         color: AccountCareTheme.text,
                                         fontSize: 12,
+                                        height: 1.2,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -548,7 +556,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
-                                    const SizedBox(height: 7),
+                                    const SizedBox(height: 6),
                                     Row(
                                       children: [
                                         Expanded(
@@ -568,7 +576,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                         ),
                                         const SizedBox(width: 4),
                                         SizedBox(
-                                          height: 30,
+                                          height: 29,
                                           child: FilledButton(
                                             onPressed: canAdd
                                                 ? () => _addProduct(product)
@@ -576,7 +584,7 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                             style: FilledButton.styleFrom(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                    horizontal: 10,
+                                                    horizontal: 9,
                                                   ),
                                               visualDensity:
                                                   VisualDensity.compact,
@@ -588,8 +596,8 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                                             child: const Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Icon(Icons.add, size: 15),
-                                                SizedBox(width: 3),
+                                                Icon(Icons.add, size: 14),
+                                                SizedBox(width: 2),
                                                 Text(
                                                   'Add',
                                                   style: TextStyle(

@@ -270,10 +270,12 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                               ),
                               validator: (value) {
                                 final amount = _parseAmountMinor(value ?? '');
-                                if (amount == null || amount <= 0)
+                                if (amount == null || amount <= 0) {
                                   return 'Enter a valid amount with up to 2 decimal places.';
-                                if (amount > balanceMinor)
+                                }
+                                if (amount > balanceMinor) {
                                   return 'Amount exceeds the outstanding balance.';
+                                }
                                 return null;
                               },
                             ),
@@ -305,8 +307,9 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                               onChanged: savingDialog
                                   ? null
                                   : (value) {
-                                      if (value != null)
+                                      if (value != null) {
                                         setDialogState(() => method = value);
+                                      }
                                     },
                             ),
                             const SizedBox(height: 12),
@@ -339,15 +342,18 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                   loadingBalance ||
                                   balanceLoadFailed ||
                                   selectedCustomerId == null ||
-                                  !formKey.currentState!.validate())
+                                  balanceMinor <= 0 ||
+                                  !formKey.currentState!.validate()) {
                                 return;
+                              }
                               final amount = _parseAmountMinor(
                                 amountController.text,
                               );
                               if (amount == null ||
                                   amount <= 0 ||
-                                  amount > balanceMinor)
+                                  amount > balanceMinor) {
                                 return;
+                              }
                               setDialogState(() => savingDialog = true);
                               try {
                                 await ref
@@ -362,8 +368,9 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                       reference: referenceController.text,
                                       paidAt: DateTime.now(),
                                     );
-                                if (dialogContext.mounted)
+                                if (dialogContext.mounted) {
                                   Navigator.pop(dialogContext, true);
+                                }
                               } catch (error) {
                                 if (!dialogContext.mounted) return;
                                 setDialogState(() => savingDialog = false);
@@ -432,8 +439,9 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
           : FutureBuilder<List<_PaymentRow>>(
               future: _paymentsFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting)
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
                 if (snapshot.hasError) {
                   return Center(
                     child: Column(

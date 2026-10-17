@@ -9,9 +9,7 @@ import 'package:desktop/core/providers/database_provider.dart';
 
 void main() {
   testWidgets('Account Care dashboard loads', (tester) async {
-    await tester.binding.setSurfaceSize(
-      const Size(1280, 720),
-    );
+    await tester.binding.setSurfaceSize(const Size(1280, 720));
 
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -23,27 +21,31 @@ void main() {
 
     final now = DateTime.now();
 
-    await database.into(database.businesses).insert(
-      BusinessesCompanion.insert(
-        id: 'test-business',
-        name: 'Test Business',
-        createdAt: now,
-        updatedAt: now,
-      ),
-    );
+    await database
+        .into(database.businesses)
+        .insert(
+          BusinessesCompanion.insert(
+            id: 'test-business',
+            name: 'Test Business',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
 
-    await database.into(database.users).insert(
-      UsersCompanion.insert(
-        id: 'test-user',
-        businessId: 'test-business',
-        name: 'Test User',
-        username: 'testuser',
-        passwordHash: 'test-password-hash',
-        role: 'master_merchant',
-        createdAt: now,
-        updatedAt: now,
-      ),
-    );
+    await database
+        .into(database.users)
+        .insert(
+          UsersCompanion.insert(
+            id: 'test-user',
+            businessId: 'test-business',
+            name: 'Test User',
+            username: 'testuser',
+            passwordHash: 'test-password-hash',
+            role: 'master_merchant',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
 
     await tester.pumpWidget(
       ProviderScope(
@@ -52,9 +54,7 @@ void main() {
           activeBusinessIdProvider.overrideWith(
             TestActiveBusinessIdNotifier.new,
           ),
-          activeUserIdProvider.overrideWith(
-            TestActiveUserIdNotifier.new,
-          ),
+          activeUserIdProvider.overrideWith(TestActiveUserIdNotifier.new),
         ],
         child: const AccountCareApp(),
       ),
@@ -62,7 +62,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text('Dashboard'), findsNWidgets(2));
+    expect(find.text('Dashboard'), findsNWidgets(3));
     expect(find.text("Today's Sales"), findsOneWidget);
     expect(find.text('Active Products'), findsOneWidget);
     expect(find.text('Outstanding Credit'), findsOneWidget);
@@ -78,16 +78,14 @@ void main() {
   });
 }
 
-class TestActiveBusinessIdNotifier
-    extends ActiveBusinessIdNotifier {
+class TestActiveBusinessIdNotifier extends ActiveBusinessIdNotifier {
   @override
   String? build() {
     return 'test-business';
   }
 }
 
-class TestActiveUserIdNotifier
-    extends ActiveUserIdNotifier {
+class TestActiveUserIdNotifier extends ActiveUserIdNotifier {
   @override
   String? build() {
     return 'test-user';

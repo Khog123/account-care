@@ -17,10 +17,7 @@ class DashboardPage extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AccountCareTheme.workspace,
       appBar: AppBar(
-        title: const Text(
-          'Dashboard',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+        title: const Text('Dashboard'),
         actions: [
           IconButton(
             tooltip: 'Refresh dashboard',
@@ -52,9 +49,11 @@ class _DashboardContent extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 850;
-        final cardColumns = constraints.maxWidth >= 1150
+
+        // Four compact metric cards on normal desktop widths.
+        final cardColumns = constraints.maxWidth >= 760
             ? 4
-            : constraints.maxWidth >= 650
+            : constraints.maxWidth >= 520
             ? 2
             : 1;
 
@@ -63,29 +62,60 @@ class _DashboardContent extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Business overview',
-                style: TextStyle(
-                  fontSize: 23,
-                  fontWeight: FontWeight.w800,
-                  color: AccountCareTheme.text,
-                ),
-              ),
-              const SizedBox(height: 5),
-              const Text(
-                'Your sales, stock and customer credit at a glance.',
-                style: TextStyle(color: AccountCareTheme.muted, fontSize: 13),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: AccountCareTheme.blue.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.dashboard_rounded,
+                      color: AccountCareTheme.blue,
+                      size: 25,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Dashboard',
+                          style: TextStyle(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w700,
+                            color: AccountCareTheme.text,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Your business at a glance',
+                          style: TextStyle(
+                            color: AccountCareTheme.muted,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 18),
+
               GridView.count(
                 crossAxisCount: cardColumns,
-                crossAxisSpacing: 14,
-                mainAxisSpacing: 14,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
                 mainAxisExtent: cardColumns == 1
-                    ? 124
+                    ? 112
                     : cardColumns == 2
-                    ? 138
-                    : 140,
+                    ? 118
+                    : 112,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
@@ -103,7 +133,11 @@ class _DashboardContent extends StatelessWidget {
                     value: '${summary.activeProductCount}',
                     icon: Icons.inventory_2_rounded,
                     color: AccountCareTheme.purple,
-                    footer: Row(
+
+                    footer: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (summary.newProductCount > 0)
                           _TinyIndicator(
@@ -111,9 +145,6 @@ class _DashboardContent extends StatelessWidget {
                             text: '${summary.newProductCount} new',
                             color: AccountCareTheme.green,
                           ),
-                        if (summary.newProductCount > 0 &&
-                            summary.inactiveProductCount > 0)
-                          const SizedBox(width: 8),
                         if (summary.inactiveProductCount > 0)
                           _TinyIndicator(
                             icon: Icons.remove_circle_outline,
@@ -402,7 +433,7 @@ class _MetricCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
 
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -437,7 +468,7 @@ class _MetricCard extends StatelessWidget {
               child: Text(
                 value,
                 style: const TextStyle(
-                  fontSize: 21,
+                  fontSize: 19,
                   fontWeight: FontWeight.w800,
                   color: AccountCareTheme.text,
                 ),
