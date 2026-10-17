@@ -1,0 +1,1888 @@
+import 'package:drift/drift.dart' hide Column;
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../../core/database/app_database.dart';
+import '../../../core/providers/business_provider.dart';
+import '../../../core/providers/product_provider.dart';
+import '../../../core/providers/service_providers.dart';
+import '../../../core/providers/database_provider.dart';
+
+class ProductsPage extends ConsumerStatefulWidget {
+  const ProductsPage({super.key});
+
+  @override
+  ConsumerState<ProductsPage> createState() => _ProductsPageState();
+}
+
+class _ProductsPageState extends ConsumerState<ProductsPage> {
+  final TextEditingController _searchController = TextEditingController();
+
+  String? _selectedCategoryId;
+  String _selectedStatus = 'All Status';
+  String? _processingProductId;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    _searchController
+      ..removeListener(_refresh)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  String _currentBusinessId() {
+    final id = ref.read(activeBusinessIdProvider);
+    if (id == null || id.isEmpty) {
+      throw StateError('No active business selected.');
+    }
+    return id;
+  }
+
+  void _refreshProducts() {
+    ref.invalidate(productListProvider);
+    ref.invalidate(archivedProductListProvider);
+    ref.invalidate(activeCategoryListProvider);
+  }
+
+  Future<void> _showAddProductDialog() async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => ProductFormDialog(businessId: _currentBusinessId()),
+    );
+    if (saved == true && mounted) _refreshProducts();
+  }
+
+  Future<void> _showEditProductDialog(Product product) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          ProductFormDialog(businessId: _currentBusinessId(), product: product),
+    );
+    if (saved == true && mounted) _refreshProducts();
+  }
+
+  Future<void> _showAdjustStockDialog(Product product) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => StockAdjustmentDialog(
+        businessId: _currentBusinessId(),
+        product: product,
+      ),
+    );
+
+    if (saved == true && mounted) {
+      _refreshProducts();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Stock updated for "${product.name}".')),
+      );
+    }
+  }
+
+  Future<void> _showAddCategoryDialog() async {
+    final controller = TextEditingController();
+
+    try {
+      final name = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Add Category'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 100,
+            decoration: const InputDecoration(
+              labelText: 'Category name',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) {
+              if (value.trim().isNotEmpty) {
+                Navigator.of(dialogContext).pop(value.trim());
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  Navigator.of(dialogContext).pop(controller.text.trim());
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      );
+
+      if (name == null || name.isEmpty || !mounted) return;
+
+      await ref
+          .read(categoryServiceProvider)
+          .createCategory(
+            businessId: _currentBusinessId(),
+            categoryId: const Uuid().v4(),
+            name: name,
+          );
+
+      ref.invalidate(activeCategoryListProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Category "$name" added.')));
+      }
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _showCategoriesDialog(List<Category> categories) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Categories'),
+        content: SizedBox(
+          width: 440,
+          height: 400,
+          child: categories.isEmpty
+              ? const Center(child: Text('No categories yet.'))
+              : ListView.separated(
+                  itemCount: categories.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, index) => ListTile(
+                    leading: const Icon(Icons.category_outlined),
+                    title: Text(categories[index].name),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              await _showAddCategoryDialog();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add Category'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _archiveProduct(Product product) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Product'),
+        content: Text(
+          '"${product.name}" will be removed from the active product list. '
+          'Its sales and historical records will remain safe.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _processingProductId = product.id);
+
+    try {
+      await ref
+          .read(productServiceProvider)
+          .deactivateProduct(
+            businessId: _currentBusinessId(),
+            productId: product.id,
+          );
+      _refreshProducts();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${product.name}" was archived.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete product: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _processingProductId = null);
+    }
+  }
+
+  Future<void> _restoreProduct(Product product) async {
+    setState(() => _processingProductId = product.id);
+
+    try {
+      await ref
+          .read(productServiceProvider)
+          .restoreProduct(
+            businessId: _currentBusinessId(),
+            productId: product.id,
+          );
+      _refreshProducts();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${product.name}" was restored.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not restore product: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _processingProductId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeAsync = ref.watch(productListProvider);
+    final archivedAsync = ref.watch(archivedProductListProvider);
+    final categoriesAsync = ref.watch(activeCategoryListProvider);
+
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 22, 22, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 850;
+
+                final heading = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Products',
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Manage your products and inventory',
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: Colors.grey.shade600),
+                    ),
+                  ],
+                );
+
+                final actions = Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    OutlinedButton(
+                      onPressed: () =>
+                          setState(() => _selectedStatus = 'Active'),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _selectedStatus == 'Active'
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : null,
+                      ),
+                      child: const Text('Active'),
+                    ),
+                    OutlinedButton(
+                      onPressed: () =>
+                          setState(() => _selectedStatus = 'Archived'),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _selectedStatus == 'Archived'
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : null,
+                      ),
+                      child: const Text('Inactive'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: categoriesAsync.maybeWhen(
+                        data: (categories) => () {
+                          _showCategoriesDialog(categories);
+                        },
+                        orElse: () => null,
+                      ),
+                      icon: const Icon(Icons.category_outlined),
+                      label: const Text('Categories'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _showAddProductDialog,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add Product'),
+                    ),
+                  ],
+                );
+
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      heading,
+                      const SizedBox(height: 12),
+                      Align(alignment: Alignment.centerLeft, child: actions),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: heading),
+                    const SizedBox(width: 12),
+                    Flexible(child: actions),
+                  ],
+                );
+              },
+            ),
+
+            const SizedBox(height: 20),
+            Expanded(
+              child: activeAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => _ProductsErrorState(
+                  error: error,
+                  onRetry: _refreshProducts,
+                ),
+                data: (activeProducts) => archivedAsync.when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, _) => _ProductsErrorState(
+                    error: error,
+                    onRetry: _refreshProducts,
+                  ),
+                  data: (archivedProducts) => categoriesAsync.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, _) => _ProductsErrorState(
+                      error: error,
+                      onRetry: _refreshProducts,
+                    ),
+                    data: (categories) => _buildContent(
+                      activeProducts,
+                      archivedProducts,
+                      categories,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(
+    List<Product> activeProducts,
+    List<Product> archivedProducts,
+    List<Category> categories,
+  ) {
+    final allProducts = [...activeProducts, ...archivedProducts];
+    final query = _searchController.text.trim().toLowerCase();
+    final now = DateTime.now();
+    final startOfWeek = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
+
+    final addedThisWeek = allProducts
+        .where((p) => !p.createdAt.isBefore(startOfWeek))
+        .length;
+
+    final lowStock = activeProducts
+        .where((p) => p.stockQuantity <= p.lowStockThreshold)
+        .length;
+
+    final categoryNames = {
+      for (final category in categories) category.id: category.name,
+    };
+
+    final filteredProducts =
+        allProducts.where((product) {
+          final matchesSearch =
+              query.isEmpty ||
+              product.name.toLowerCase().contains(query) ||
+              (product.sku?.toLowerCase().contains(query) ?? false);
+
+          final matchesCategory =
+              _selectedCategoryId == null ||
+              product.categoryId == _selectedCategoryId;
+
+          final matchesStatus = switch (_selectedStatus) {
+            'Active' => product.isActive,
+            'Archived' => !product.isActive,
+            'Out of Stock' => product.isActive && product.stockQuantity == 0,
+            'Low Stock' =>
+              product.isActive &&
+                  product.stockQuantity > 0 &&
+                  product.stockQuantity <= product.lowStockThreshold,
+            'In Stock' =>
+              product.isActive &&
+                  product.stockQuantity > product.lowStockThreshold,
+            _ => true,
+          };
+
+          return matchesSearch && matchesCategory && matchesStatus;
+        }).toList()..sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+
+    final categoryCounts = <String, int>{};
+    for (final product in activeProducts) {
+      categoryCounts.update(
+        product.categoryId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    return Column(
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 600
+                ? 1
+                : constraints.maxWidth < 1000
+                ? 2
+                : 4;
+
+            final cardWidth =
+                (constraints.maxWidth - (12 * (columns - 1))) / columns;
+
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                SizedBox(
+                  width: cardWidth,
+                  child: _SummaryCard(
+                    title: 'Total Products',
+                    value: allProducts.length.toString(),
+                    subtitle: '$addedThisWeek added this week',
+                    icon: Icons.inventory_2_outlined,
+                    accent: const Color(0xFF4169E1),
+                  ),
+                ),
+                SizedBox(
+                  width: cardWidth,
+                  child: _SummaryCard(
+                    title: 'Active Products',
+                    value: activeProducts.length.toString(),
+                    subtitle: 'Available in product list',
+                    icon: Icons.check_circle_outline,
+                    accent: const Color(0xFF18865A),
+                  ),
+                ),
+                SizedBox(
+                  width: cardWidth,
+                  child: _SummaryCard(
+                    title: 'Low Stock',
+                    value: lowStock.toString(),
+                    subtitle: 'At or below stock threshold',
+                    icon: Icons.warning_amber_rounded,
+                    accent: const Color(0xFFD97706),
+                  ),
+                ),
+                SizedBox(
+                  width: cardWidth,
+                  child: _SummaryCard(
+                    title: 'Archived',
+                    value: archivedProducts.length.toString(),
+                    subtitle: 'Inactive products',
+                    icon: Icons.archive_outlined,
+                    accent: const Color(0xFFB42318),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 3,
+                child: _buildProductTable(
+                  filteredProducts,
+                  categories,
+                  categoryNames,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                flex: 1,
+                child: Column(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _InventoryMovementsCard(
+                        businessId: _currentBusinessId(),
+                        products: allProducts,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      flex: 2,
+                      child: _CategoriesCard(
+                        categories: categories,
+                        counts: categoryCounts,
+                        onViewAll: () => _showCategoriesDialog(categories),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProductTable(
+    List<Product> products,
+    List<Category> categories,
+    Map<String, String> categoryNames,
+  ) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 42,
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search products...',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        suffixIcon: _searchController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Clear search',
+                                onPressed: _searchController.clear,
+                                icon: const Icon(Icons.close, size: 18),
+                              ),
+                        contentPadding: EdgeInsets.zero,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    initialValue: _selectedCategoryId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('All Categories'),
+                      ),
+                      ...categories.map(
+                        (category) => DropdownMenuItem<String?>(
+                          value: category.id,
+                          child: Text(
+                            category.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _selectedCategoryId = value),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _selectedStatus,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Status',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    items:
+                        const [
+                          'All Status',
+                          'Active',
+                          'Archived',
+                          'In Stock',
+                          'Low Stock',
+                          'Out of Stock',
+                        ].map((status) {
+                          return DropdownMenuItem(
+                            value: status,
+                            child: Text(
+                              status,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _selectedStatus = value);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: products.isEmpty
+                ? const Center(child: Text('No products match these filters.'))
+                : SingleChildScrollView(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        horizontalMargin: 12,
+                        columnSpacing: 18,
+                        headingRowHeight: 44,
+                        dataRowMinHeight: 54,
+                        dataRowMaxHeight: 62,
+                        columns: const [
+                          DataColumn(label: Text('#')),
+                          DataColumn(label: Text('Product')),
+                          DataColumn(label: Text('Category')),
+                          DataColumn(label: Text('SKU')),
+                          DataColumn(label: Text('Purchase Price')),
+                          DataColumn(label: Text('Sale Price')),
+                          DataColumn(label: Text('Stock')),
+                          DataColumn(label: Text('Status')),
+                          DataColumn(label: Text('Action')),
+                        ],
+                        rows: [
+                          for (var i = 0; i < products.length; i++)
+                            _productRow(products[i], i + 1, categoryNames),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            child: Text(
+              '${products.length} product${products.length == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  DataRow _productRow(
+    Product product,
+    int index,
+    Map<String, String> categoryNames,
+  ) {
+    final isProcessing = _processingProductId == product.id;
+    final status = !product.isActive
+        ? 'Archived'
+        : product.stockQuantity == 0
+        ? 'Out of Stock'
+        : product.stockQuantity <= product.lowStockThreshold
+        ? 'Low Stock'
+        : 'In Stock';
+
+    final statusColor = switch (status) {
+      'Archived' => const Color(0xFF667085),
+      'Out of Stock' => const Color(0xFFB42318),
+      'Low Stock' => const Color(0xFFB54708),
+      _ => const Color(0xFF027A48),
+    };
+
+    return DataRow(
+      cells: [
+        DataCell(Text('$index')),
+        DataCell(
+          SizedBox(
+            width: 145,
+            child: Text(
+              product.name,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+        DataCell(
+          SizedBox(
+            width: 100,
+            child: Text(
+              categoryNames[product.categoryId] ?? 'Uncategorised',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        DataCell(
+          Text(product.sku?.trim().isNotEmpty == true ? product.sku! : '-'),
+        ),
+        DataCell(Text(_formatMoney(product.purchasePriceMinor))),
+        DataCell(Text(_formatMoney(product.salePriceMinor))),
+        DataCell(Text('${product.stockQuantity}')),
+        DataCell(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        DataCell(
+          isProcessing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (product.isActive) ...[
+                      IconButton(
+                        tooltip: 'Edit',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _showEditProductDialog(product),
+                        icon: const Icon(Icons.edit_outlined, size: 19),
+                      ),
+                      IconButton(
+                        tooltip: 'Adjust Stock',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _showAdjustStockDialog(product),
+                        icon: const Icon(Icons.inventory_outlined, size: 19),
+                      ),
+                      IconButton(
+                        tooltip: 'Delete',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _archiveProduct(product),
+                        icon: const Icon(Icons.delete_outline, size: 19),
+                      ),
+                    ] else
+                      IconButton(
+                        tooltip: 'Restore',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _restoreProduct(product),
+                        icon: const Icon(Icons.restore_outlined, size: 19),
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.accent,
+  });
+
+  final String title;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: accent, size: 21),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    value,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(color: accent),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryMovementsCard extends ConsumerWidget {
+  const _InventoryMovementsCard({
+    required this.businessId,
+    required this.products,
+  });
+
+  final String businessId;
+  final List<Product> products;
+
+  String _movementLabel(String type) {
+    switch (type) {
+      case 'sale':
+        return 'Sale';
+      case 'initial_stock':
+        return 'Initial stock';
+      case 'stock_adjustment_add':
+        return 'Stock added';
+      case 'stock_adjustment_remove':
+        return 'Stock removed';
+      default:
+        return type.replaceAll('_', ' ');
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final local = date.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    return '${local.day.toString().padLeft(2, '0')}/'
+        '${local.month.toString().padLeft(2, '0')} '
+        '$hour:$minute $period';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final database = ref.watch(databaseProvider);
+    final productNames = {
+      for (final product in products) product.id: product.name,
+    };
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Inventory Movements',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Icon(
+                  Icons.history,
+                  size: 19,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              'Latest stock activity',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: FutureBuilder<List<InventoryMovement>>(
+                future:
+                    (database.select(database.inventoryMovements)
+                          ..where((m) => m.businessId.equals(businessId))
+                          ..orderBy([(m) => OrderingTerm.desc(m.movementAt)])
+                          ..limit(4))
+                        .get(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    );
+                  }
+
+                  if (snapshot.hasError) {
+                    return const Center(
+                      child: Text('Could not load movements.'),
+                    );
+                  }
+
+                  final movements = snapshot.data ?? [];
+                  if (movements.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No inventory movements yet.',
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: movements.length,
+                    separatorBuilder: (_, __) => const Divider(height: 13),
+                    itemBuilder: (context, index) {
+                      final movement = movements[index];
+                      final quantity = movement.quantityChange;
+                      final color = quantity < 0
+                          ? const Color(0xFFB42318)
+                          : const Color(0xFF18865A);
+                      final name =
+                          productNames[movement.productId] ?? 'Product';
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              quantity < 0
+                                  ? Icons.south_east
+                                  : Icons.north_east,
+                              color: color,
+                              size: 17,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${_movementLabel(movement.movementType)} · '
+                                  '${_formatDate(movement.movementAt)}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${quantity > 0 ? '+' : ''}$quantity',
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoriesCard extends StatelessWidget {
+  const _CategoriesCard({
+    required this.categories,
+    required this.counts,
+    required this.onViewAll,
+  });
+
+  final List<Category> categories;
+  final Map<String, int> counts;
+  final VoidCallback onViewAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = categories.take(5).toList();
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Categories',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                TextButton(onPressed: onViewAll, child: const Text('View all')),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Expanded(
+              child: categories.isEmpty
+                  ? const Center(child: Text('No categories yet.'))
+                  : ListView.separated(
+                      itemCount: shown.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final category = shown[index];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.folder_outlined, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  category.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              Text(
+                                '${counts[category.id] ?? 0}',
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyProductsState extends StatelessWidget {
+  const _EmptyProductsState({
+    required this.archived,
+    required this.hasSearch,
+    required this.onAddProduct,
+  });
+
+  final bool archived;
+  final bool hasSearch;
+  final VoidCallback? onAddProduct;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            archived ? Icons.archive_outlined : Icons.inventory_2_outlined,
+            size: 56,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            hasSearch
+                ? 'No products found'
+                : archived
+                ? 'No archived products'
+                : 'No products yet',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            hasSearch
+                ? 'Try a different search.'
+                : 'Add your first product to manage inventory.',
+          ),
+          if (onAddProduct != null && !hasSearch) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onAddProduct,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Product'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductsErrorState extends StatelessWidget {
+  const _ProductsErrorState({required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 48),
+          const SizedBox(height: 12),
+          const Text('Could not load products.'),
+          const SizedBox(height: 8),
+          Text(error.toString(), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ProductFormDialog extends ConsumerStatefulWidget {
+  const ProductFormDialog({super.key, required this.businessId, this.product});
+
+  final String businessId;
+  final Product? product;
+
+  @override
+  ConsumerState<ProductFormDialog> createState() => _ProductFormDialogState();
+}
+
+class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
+  final _formKey = GlobalKey<FormState>();
+
+  late final TextEditingController _nameController;
+  late final TextEditingController _skuController;
+  late final TextEditingController _purchasePriceController;
+  late final TextEditingController _salePriceController;
+  late final TextEditingController _stockController;
+  late final TextEditingController _lowStockController;
+
+  String? _categoryId;
+  bool _saving = false;
+
+  bool get _isEditing => widget.product != null;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final product = widget.product;
+
+    _nameController = TextEditingController(text: product?.name ?? '');
+    _skuController = TextEditingController(text: product?.sku ?? '');
+    _purchasePriceController = TextEditingController(
+      text: product == null
+          ? ''
+          : _formatMinorInput(product.purchasePriceMinor),
+    );
+    _salePriceController = TextEditingController(
+      text: product == null ? '' : _formatMinorInput(product.salePriceMinor),
+    );
+    _stockController = TextEditingController(text: '0');
+    _lowStockController = TextEditingController(
+      text: product?.lowStockThreshold.toString() ?? '0',
+    );
+    _categoryId = product?.categoryId;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _skuController.dispose();
+    _purchasePriceController.dispose();
+    _salePriceController.dispose();
+    _stockController.dispose();
+    _lowStockController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final categoryId = _categoryId;
+
+    if (categoryId == null || categoryId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a category.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+
+    try {
+      final productService = ref.read(productServiceProvider);
+      final inventoryService = ref.read(inventoryServiceProvider);
+
+      final purchasePriceMinor = _parseMoneyToMinor(
+        _purchasePriceController.text,
+      );
+      final salePriceMinor = _parseMoneyToMinor(_salePriceController.text);
+      final lowStockThreshold = int.parse(_lowStockController.text.trim());
+
+      if (_isEditing) {
+        await productService.updateProduct(
+          businessId: widget.businessId,
+          productId: widget.product!.id,
+          categoryId: categoryId,
+          name: _nameController.text.trim(),
+          sku: _nullableText(_skuController.text),
+          purchasePriceMinor: purchasePriceMinor,
+          salePriceMinor: salePriceMinor,
+          lowStockThreshold: lowStockThreshold,
+          isActive: true,
+        );
+      } else {
+        final productId = const Uuid().v4();
+
+        await productService.createProduct(
+          businessId: widget.businessId,
+          productId: productId,
+          categoryId: categoryId,
+          name: _nameController.text.trim(),
+          sku: _nullableText(_skuController.text),
+          purchasePriceMinor: purchasePriceMinor,
+          salePriceMinor: salePriceMinor,
+          lowStockThreshold: lowStockThreshold,
+        );
+
+        final openingStock = int.parse(_stockController.text.trim());
+
+        if (openingStock > 0) {
+          await inventoryService.addStock(
+            businessId: widget.businessId,
+            productId: productId,
+            quantity: openingStock,
+            movementType: 'initial_stock',
+            movementAt: DateTime.now(),
+          );
+        }
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save product: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categoriesAsync = ref.watch(activeCategoryListProvider);
+
+    return AlertDialog(
+      title: Text(_isEditing ? 'Edit Product' : 'Add Product'),
+      content: SizedBox(
+        width: 600,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  autofocus: true,
+                  maxLength: 200,
+                  decoration: const InputDecoration(
+                    labelText: 'Product name',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Product name is required.';
+                    }
+
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: categoriesAsync.when(
+                        loading: () => const InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: 'Category',
+                            border: OutlineInputBorder(),
+                          ),
+                          child: SizedBox(
+                            height: 24,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        error: (error, stackTrace) => InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Category',
+                            border: OutlineInputBorder(),
+                          ),
+                          child: Text('Could not load categories: $error'),
+                        ),
+                        data: (categories) {
+                          return DropdownButtonFormField<String>(
+                            initialValue:
+                                categories.any(
+                                  (category) => category.id == _categoryId,
+                                )
+                                ? _categoryId
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: 'Category',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: categories
+                                .map(
+                                  (category) => DropdownMenuItem<String>(
+                                    value: category.id,
+                                    child: Text(category.name),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: _saving
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _categoryId = value;
+                                    });
+                                  },
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Select a category.';
+                              }
+
+                              return null;
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 180,
+                      child: TextFormField(
+                        controller: _skuController,
+                        maxLength: 100,
+                        decoration: const InputDecoration(
+                          labelText: 'SKU',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _purchasePriceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Purchase price (PKR)',
+                          prefixText: 'Rs. ',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: _validateMoney,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _salePriceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Sale price (PKR)',
+                          prefixText: 'Rs. ',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: _validateMoney,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!_isEditing)
+                      Expanded(
+                        child: TextFormField(
+                          controller: _stockController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Opening stock',
+                            border: OutlineInputBorder(),
+                            helperText: 'Recorded as initial inventory.',
+                          ),
+                          validator: _validateWholeNumber,
+                        ),
+                      ),
+                    if (!_isEditing) const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _lowStockController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Low stock alert at',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: _validateWholeNumber,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_isEditing) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Current stock',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(widget.product!.stockQuantity.toString()),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Use Adjust Stock to change inventory quantity.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'A product stays active even when its stock reaches zero.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(_isEditing ? 'Save Changes' : 'Add Product'),
+        ),
+      ],
+    );
+  }
+}
+
+class StockAdjustmentDialog extends ConsumerStatefulWidget {
+  const StockAdjustmentDialog({
+    super.key,
+    required this.businessId,
+    required this.product,
+  });
+
+  final String businessId;
+  final Product product;
+
+  @override
+  ConsumerState<StockAdjustmentDialog> createState() =>
+      _StockAdjustmentDialogState();
+}
+
+class _StockAdjustmentDialogState extends ConsumerState<StockAdjustmentDialog> {
+  final _formKey = GlobalKey<FormState>();
+
+  late final TextEditingController _quantityController;
+  late final TextEditingController _referenceController;
+  late final TextEditingController _notesController;
+
+  bool _addStock = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _quantityController = TextEditingController();
+    _referenceController = TextEditingController();
+    _notesController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    _referenceController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+
+    try {
+      final inventoryService = ref.read(inventoryServiceProvider);
+
+      final quantity = int.parse(_quantityController.text.trim());
+
+      if (_addStock) {
+        await inventoryService.addStock(
+          businessId: widget.businessId,
+          productId: widget.product.id,
+          quantity: quantity,
+          movementType: 'stock_adjustment_add',
+          movementAt: DateTime.now(),
+          reference: _nullableText(_referenceController.text),
+          notes: _nullableText(_notesController.text),
+        );
+      } else {
+        await inventoryService.removeStock(
+          businessId: widget.businessId,
+          productId: widget.product.id,
+          quantity: quantity,
+          movementType: 'stock_adjustment_remove',
+          movementAt: DateTime.now(),
+          reference: _nullableText(_referenceController.text),
+          notes: _nullableText(_notesController.text),
+        );
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not adjust stock: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: const Text('Adjust Stock'),
+      content: SizedBox(
+        width: 520,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.product.name,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Current stock: ${widget.product.stockQuantity}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 20),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment<bool>(
+                      value: true,
+                      icon: Icon(Icons.add),
+                      label: Text('Add Stock'),
+                    ),
+                    ButtonSegment<bool>(
+                      value: false,
+                      icon: Icon(Icons.remove),
+                      label: Text('Remove Stock'),
+                    ),
+                  ],
+                  selected: {_addStock},
+                  onSelectionChanged: _saving
+                      ? null
+                      : (selection) {
+                          setState(() {
+                            _addStock = selection.first;
+                          });
+                        },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _quantityController,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: _validatePositiveWholeNumber,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _referenceController,
+                  maxLength: 200,
+                  decoration: const InputDecoration(
+                    labelText: 'Reference (optional)',
+                    hintText: 'e.g. Purchase invoice #123',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextFormField(
+                  controller: _notesController,
+                  maxLength: 500,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(_addStock ? 'Add Stock' : 'Remove Stock'),
+        ),
+      ],
+    );
+  }
+}
+
+String? _nullableText(String value) {
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+String? _validateMoney(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'Required.';
+  }
+
+  final amount = double.tryParse(value.trim());
+
+  if (amount == null) {
+    return 'Enter a valid amount.';
+  }
+
+  if (amount < 0) {
+    return 'Cannot be negative.';
+  }
+
+  return null;
+}
+
+String? _validateWholeNumber(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'Required.';
+  }
+
+  final number = int.tryParse(value.trim());
+
+  if (number == null) {
+    return 'Enter a whole number.';
+  }
+
+  if (number < 0) {
+    return 'Cannot be negative.';
+  }
+
+  return null;
+}
+
+String? _validatePositiveWholeNumber(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'Required.';
+  }
+
+  final number = int.tryParse(value.trim());
+
+  if (number == null) {
+    return 'Enter a whole number.';
+  }
+
+  if (number <= 0) {
+    return 'Enter a quantity greater than zero.';
+  }
+
+  return null;
+}
+
+int _parseMoneyToMinor(String value) {
+  final amount = double.parse(value.trim());
+  return (amount * 100).round();
+}
+
+String _formatMinorInput(int amountMinor) {
+  final major = amountMinor ~/ 100;
+  final decimal = (amountMinor % 100).abs().toString().padLeft(2, '0');
+  return '$major.$decimal';
+}
+
+String _formatMoney(int amountMinor) {
+  final major = amountMinor ~/ 100;
+  final decimal = (amountMinor % 100).abs().toString().padLeft(2, '0');
+  return 'Rs. $major.$decimal';
+}
